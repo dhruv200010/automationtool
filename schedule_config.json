@@ -1,0 +1,15 @@
+{
+    "daily_schedule": {
+        "monday": "20:00",
+        "tuesday": "20:00",
+        "wednesday": "20:00",
+        "thursday": "20:00",
+        "friday": "20:00",
+        "saturday": "11:00",
+        "sunday": "11:00"
+    },
+    "videos_per_day": 1,
+    "min_interval_hours": 4,
+    "max_videos_per_week": 7,
+    "timezone": "Asia/Kolkata"
+}

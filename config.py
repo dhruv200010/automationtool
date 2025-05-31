@@ -5,7 +5,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # YouTube API Configuration
-YOUTUBE_API_SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
+YOUTUBE_API_SCOPES = ['https://www.googleapis.com/auth/youtube.upload',
+                      'https://www.googleapis.com/auth/youtube']
 
 # Default upload settings
 DEFAULT_VIDEO_CATEGORY = os.getenv('DEFAULT_VIDEO_CATEGORY', '22')  # People & Blogs
