@@ -219,11 +219,24 @@ class ScheduleConfig:
         for i in range(len(schedule) - 1):
             time_diff = schedule[i + 1] - schedule[i]
             if time_diff.total_seconds() < self.min_interval_hours * 3600:
+                print(f"❌ Minimum interval between uploads not met: {time_diff.total_seconds() / 3600:.1f} hours")
                 return False
         
         # Check maximum videos per week
-        if len(schedule) > self.max_videos_per_week:
-            return False
+        # Group videos by week
+        videos_by_week = {}
+        for time in schedule:
+            # Get the start of the week (Monday) for this time
+            local_time = time.astimezone(self.timezone)
+            week_start = local_time - timedelta(days=local_time.weekday())
+            week_key = week_start.strftime('%Y-%m-%d')
+            videos_by_week[week_key] = videos_by_week.get(week_key, 0) + 1
+        
+        # Check if any week has too many videos
+        for week, count in videos_by_week.items():
+            if count > self.max_videos_per_week:
+                print(f"❌ Week starting {week} has {count} videos (max allowed: {self.max_videos_per_week})")
+                return False
             
         return True
 

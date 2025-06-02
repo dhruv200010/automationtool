@@ -6,7 +6,11 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 import pickle
 import sys
-from config import (
+import os
+
+# Add the parent directory to sys.path to import youtube_config.py
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from youtube_config import (
     YOUTUBE_API_SCOPES,
     DEFAULT_VIDEO_CATEGORY,
     DEFAULT_PRIVACY_STATUS,
