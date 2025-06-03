@@ -3,6 +3,7 @@ Script to generate YouTube titles for shorts videos using their subtitle content
 """
 import os
 import json
+import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 import pysrt
@@ -13,6 +14,8 @@ class ShortsTitleGenerator:
     def __init__(self):
         self.title_generator = TitleGenerator()
         self.titles: Dict[str, str] = {}  # Store video_path: title mapping
+        self.metadata_dir = Path("output/metadata")
+        self.metadata_dir.mkdir(exist_ok=True)
 
     def get_subtitle_content_for_timestamps(self, subtitle_path: str, start_time: float, end_time: float) -> str:
         """Get subtitle content for a specific time range"""
@@ -37,6 +40,22 @@ class ShortsTitleGenerator:
             print(f"Error reading subtitle file {subtitle_path}: {str(e)}")
             return ""
 
+    def safe_encode(self, text: str) -> str:
+        """Safely encode text for console output"""
+        return text.encode(sys.stdout.encoding, errors='ignore').decode()
+
+    def save_metadata(self, video_path: str, title: str, index: int):
+        """Save metadata for a single short"""
+        metadata = {
+            "title": title,
+            "video_path": str(video_path),
+            "index": index
+        }
+        
+        metadata_file = self.metadata_dir / f"short_{index+1}.json"
+        with open(metadata_file, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
+
     def generate_title_for_video(self, video_path: str, subtitle_path: str, start_time: float, end_time: float) -> str:
         """Generate title for a single video using its corresponding subtitle content"""
         print(f"\nProcessing video: {os.path.basename(video_path)}")
@@ -45,16 +64,17 @@ class ShortsTitleGenerator:
         # Get subtitle content for the specific time range
         subtitle_content = self.get_subtitle_content_for_timestamps(subtitle_path, start_time, end_time)
         if not subtitle_content:
-            print(f"⚠️ No subtitle content found for {video_path} between {start_time}s and {end_time}s")
+            print(f"No subtitle content found for {video_path} between {start_time}s and {end_time}s")
             return ""
 
         # Generate title using the subtitle content
         title = self.title_generator.generate_title(subtitle_content)
         if title:
-            print(f"✅ Generated title: {title}")
+            safe_title = self.safe_encode(title)
+            print(f"Generated title: {safe_title}")
             return title
         else:
-            print(f"❌ Failed to generate title for {video_path}")
+            print(f"Failed to generate title for {video_path}")
             return ""
 
     def process_all_shorts(self, shorts_dir: str, subtitles_dir: str, video_path: str):
@@ -71,10 +91,12 @@ class ShortsTitleGenerator:
 
         print(f"Found {len(video_files)} video files to process")
 
-        # Use the test.srt file
-        subtitle_file = subtitles_path / "test.srt"
+        # Get the video name from the input video path
+        video_name = Path(video_path).stem.replace("_with_subs", "")
+        subtitle_file = subtitles_path / f"{video_name}.srt"
+        
         if not subtitle_file.exists():
-            print(f"⚠️ Subtitle file test.srt not found in {subtitles_dir}")
+            print(f"Subtitle file {subtitle_file} not found in {subtitles_dir}")
             return
 
         # Get the same clip ranges used to create the shorts
@@ -92,15 +114,17 @@ class ShortsTitleGenerator:
         )
 
         if len(video_files) != len(clip_ranges):
-            print(f"⚠️ Number of videos ({len(video_files)}) doesn't match number of clip ranges ({len(clip_ranges)})")
+            print(f"Number of videos ({len(video_files)}) doesn't match number of clip ranges ({len(clip_ranges)})")
             return
 
         # Process each video with its corresponding timestamp
-        for video_file, (start_time, end_time) in zip(video_files, clip_ranges):
+        for i, (video_file, (start_time, end_time)) in enumerate(zip(video_files, clip_ranges)):
             # Generate title using the corresponding subtitle content
             title = self.generate_title_for_video(str(video_file), str(subtitle_file), start_time, end_time)
             if title:
                 self.titles[str(video_file)] = title
+                # Save metadata for this short
+                self.save_metadata(str(video_file), title, i)
 
         # Save titles to JSON file
         self.save_titles()
@@ -110,17 +134,26 @@ class ShortsTitleGenerator:
         output_file = "shorts_titles.json"
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(self.titles, f, indent=2, ensure_ascii=False)
-        print(f"\n✅ Titles saved to {output_file}")
+        print(f"\nTitles saved to {output_file}")
 
 def main():
     # Initialize generator
     generator = ShortsTitleGenerator()
     
+    # Get the most recent video file from the output directory
+    output_dir = Path("output")
+    video_files = list(output_dir.glob("*_with_subs.mp4"))
+    if not video_files:
+        raise FileNotFoundError("No processed video found in output directory")
+    
+    # Use the most recent video file
+    video_path = str(video_files[-1])
+    
     # Process all shorts
     generator.process_all_shorts(
         shorts_dir="output/shorts",
         subtitles_dir="subtitles",
-        video_path="output/test_with_subs.mp4"
+        video_path=video_path
     )
 
 if __name__ == "__main__":

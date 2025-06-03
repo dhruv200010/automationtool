@@ -68,16 +68,16 @@ def main():
             str(output_path)
         ], "Burning subtitles into video")
 
-        print(f"\n✅ Processing complete! Output video saved to: {output_path}")
+        print(f"\nProcessing complete! Output video saved to: {output_path}")
         
     except Exception as e:
-        print(f"\n❌ Error: {str(e)}")
+        print(f"\nError: {str(e)}")
         sys.exit(1)
     finally:
         # Clean up temporary ASS file
         if Path("long.ass").exists():
             Path("long.ass").unlink()
-            print("\n🧹 Temporary files cleaned up")
+            print("\nTemporary files cleaned up")
 
 if __name__ == "__main__":
     main()

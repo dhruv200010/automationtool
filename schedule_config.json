@@ -10,6 +10,6 @@
     },
     "videos_per_day": 1,
     "min_interval_hours": 4,
-    "max_videos_per_week": 7,
+    "max_videos_per_week": 8,
     "timezone": "Asia/Kolkata"
 }

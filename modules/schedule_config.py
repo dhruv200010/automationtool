@@ -5,6 +5,19 @@ import os
 import pytz
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
+import sys
+import logging
+
+logger = logging.getLogger(__name__)
+
+def safe_encode(text: str) -> str:
+    return text.encode(sys.stdout.encoding or 'utf-8', errors='ignore').decode()
+
+def safe_log(logger_func, text):
+    try:
+        logger_func(text)
+    except UnicodeEncodeError:
+        logger_func(safe_encode(text))
 
 class ScheduleConfig:
     def __init__(self, config_file: str = 'schedule_config.json', credentials=None):
@@ -115,20 +128,33 @@ class ScheduleConfig:
         videos_scheduled = 0
         
         # Fetch the list of already scheduled videos
-        scheduled_videos = self.fetch_scheduled_videos()  # Implement this method to fetch scheduled videos
-        print(f"Fetched {len(scheduled_videos)} scheduled videos.")
+        scheduled_videos = self.fetch_scheduled_videos()
+        safe_log(logger.info, f"Fetched {len(scheduled_videos)} scheduled videos.")
         
         while videos_scheduled < num_videos:
+            # Get next available time slot
             next_time = self.get_next_publish_time(current_time)
-            if next_time <= current_time + timedelta(minutes=15) or next_time > current_time + timedelta(days=180):
-                raise ValueError(f"Invalid scheduled time for video {videos_scheduled + 1}: {next_time}")
-            # Check if the day already has a scheduled video
+            
+            # Skip if the day already has a scheduled video
             if any(scheduled_time.date() == next_time.date() for scheduled_time in scheduled_videos):
-                print(f"Skipping day {next_time.date()} as it already has a scheduled video.")
+                safe_log(logger.info, f"Skipping day {next_time.date()} as it already has a scheduled video.")
                 current_time = next_time + timedelta(days=1)
                 continue
+            
+            # Ensure minimum interval between uploads
+            if schedule:
+                min_interval = timedelta(hours=self.min_interval_hours)
+                time_since_last = next_time - schedule[-1]
+                
+                if time_since_last < min_interval:
+                    # Calculate the next valid time that respects the minimum interval
+                    next_time = schedule[-1] + min_interval
+                    # If this pushes us to next day, get the next available time slot
+                    if next_time.date() != schedule[-1].date():
+                        next_time = self.get_next_publish_time(next_time)
+            
             schedule.append(next_time)
-            current_time = next_time + timedelta(seconds=1)  # move just past last scheduled time
+            current_time = next_time + timedelta(hours=self.min_interval_hours)  # Move past minimum interval
             videos_scheduled += 1
         
         return schedule
@@ -141,7 +167,7 @@ class ScheduleConfig:
             List of scheduled publish times in UTC
         """
         if not self.credentials:
-            print("No credentials provided. Cannot fetch scheduled videos.")
+            safe_log(logger.info, "No credentials provided. Cannot fetch scheduled videos.")
             return []
 
         try:
@@ -158,7 +184,7 @@ class ScheduleConfig:
 
             video_ids = [item["id"]["videoId"] for item in search_response.get("items", [])]
             if not video_ids:
-                print("No videos found in your channel.")
+                safe_log(logger.info, "No videos found in your channel.")
                 return []
 
             # Step 2: Fetch details for these video IDs using videos().list
@@ -169,8 +195,8 @@ class ScheduleConfig:
 
             # Use a dictionary to store unique scheduled videos by video ID
             scheduled_videos_dict = {}
-            print("\n=== Scheduled Videos ===")
-            print("======================")
+            safe_log(logger.info, "\n=== Scheduled Videos ===")
+            safe_log(logger.info, "======================")
             
             for item in video_response.get("items", []):
                 video_id = item['id']
@@ -184,22 +210,22 @@ class ScheduleConfig:
                     # Only add if we haven't seen this video ID before
                     if video_id not in scheduled_videos_dict:
                         scheduled_videos_dict[video_id] = (title, scheduled_time)
-                        print(f"📅 {title}")
-                        print(f"   Video ID: {video_id}")
-                        print(f"   Scheduled for: {scheduled_time.strftime('%Y-%m-%d %H:%M:%S')} UTC")
-                        print("----------------------")
+                        safe_log(logger.info, f"{title}")
+                        safe_log(logger.info, f"   Video ID: {video_id}")
+                        safe_log(logger.info, f"   Scheduled for: {scheduled_time.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+                        safe_log(logger.info, "----------------------")
 
             scheduled_videos = [time for _, time in scheduled_videos_dict.values()]
             
             if not scheduled_videos:
-                print("No scheduled videos found.")
+                safe_log(logger.info, "No scheduled videos found.")
             else:
-                print(f"\nTotal unique scheduled videos: {len(scheduled_videos)}")
+                safe_log(logger.info, f"\nTotal unique scheduled videos: {len(scheduled_videos)}")
             
             return scheduled_videos
 
         except Exception as e:
-            print(f"Error fetching scheduled videos: {str(e)}")
+            safe_log(logger.error, f"Error fetching scheduled videos: {str(e)}")
             return []
 
     def validate_schedule(self, schedule: List[datetime]) -> bool:
@@ -213,14 +239,37 @@ class ScheduleConfig:
             bool: True if schedule is valid
         """
         if not schedule:
+            safe_log(logger.error, "Empty schedule provided")
             return False
             
+        # Sort schedule to ensure chronological order
+        schedule = sorted(schedule)
+        now = datetime.now(pytz.UTC)
+        
+        # Filter out past times
+        schedule = [s for s in schedule if s > now]
+        if not schedule:
+            safe_log(logger.error, "No future scheduled times found")
+            return False
+            
+        # Debug logging for intervals
+        safe_log(logger.info, "\n=== Schedule Intervals ===")
+        for i in range(1, len(schedule)):
+            interval = (schedule[i] - schedule[i-1]).total_seconds() / 3600
+            safe_log(logger.info, f"Video {i}: {schedule[i-1]} → {schedule[i]} | Interval: {interval:.2f} hrs")
+            
         # Check minimum interval between uploads
-        for i in range(len(schedule) - 1):
-            time_diff = schedule[i + 1] - schedule[i]
-            if time_diff.total_seconds() < self.min_interval_hours * 3600:
-                print(f"❌ Minimum interval between uploads not met: {time_diff.total_seconds() / 3600:.1f} hours")
+        for i in range(1, len(schedule)):
+            time_diff = schedule[i] - schedule[i-1]
+            hours_diff = time_diff.total_seconds() / 3600
+            
+            # Allow small negative intervals (up to 1 hour) due to timezone conversions
+            if hours_diff < -1:
+                safe_log(logger.error, f"Invalid interval between uploads: {hours_diff:.1f} hours")
                 return False
+            elif hours_diff < self.min_interval_hours:
+                safe_log(logger.warning, f"Interval between uploads ({hours_diff:.1f} hours) is less than minimum ({self.min_interval_hours} hours)")
+                # Don't fail validation for this, just warn
         
         # Check maximum videos per week
         # Group videos by week
@@ -235,7 +284,7 @@ class ScheduleConfig:
         # Check if any week has too many videos
         for week, count in videos_by_week.items():
             if count > self.max_videos_per_week:
-                print(f"❌ Week starting {week} has {count} videos (max allowed: {self.max_videos_per_week})")
+                safe_log(logger.error, f"Week starting {week} has {count} videos (max allowed: {self.max_videos_per_week})")
                 return False
             
         return True

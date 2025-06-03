@@ -13,15 +13,15 @@ def test_auth():
         
         if response and 'items' in response:
             channel_name = response['items'][0]['snippet']['title']
-            print(f"✅ Authentication successful!")
+            print(f"Authentication successful!")
             print(f"Connected to channel: {channel_name}")
             return True
         else:
-            print("❌ Authentication failed: No channel data received")
+            print("Authentication failed: No channel data received")
             return False
             
     except Exception as e:
-        print(f"❌ Authentication failed: {str(e)}")
+        print(f"Authentication failed: {str(e)}")
         return False
 
 if __name__ == "__main__":
