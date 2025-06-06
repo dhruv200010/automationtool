@@ -115,8 +115,8 @@ def main():
         for vf in [os.path.join(shorts_dir, f) for f in os.listdir(shorts_dir) if f.endswith('.mp4')]:
             print(f"- {vf}")
         print("\nTitles in shorts_titles.json:")
-        for path, title in shorts_titles.items():
-            print(f"- {path}: {title}")
+        for path, data in shorts_titles.items():
+            print(f"- {path}: {data['title']} {' '.join(data['hashtags'])}")
         return
     
     # Get schedule that respects max_videos_per_week limit
@@ -133,39 +133,6 @@ def main():
     print("-" * 100)
     
     for video_path, publish_time in zip(video_files, schedule):
-        local_time = publish_time.astimezone(config.timezone)
-        title = normalized_shorts_titles[normalize_path(video_path)].strip('"')  # Remove quotes from title
-        print(f"{os.path.basename(video_path):<20} {title[:30]:<30} {local_time.strftime('%Y-%m-%d'):<15} "
-              f"{local_time.strftime('%I:%M %p'):<20} "
-              f"{publish_time.strftime('%Y-%m-%d %H:%M %Z'):<20}")
-    
-    print("=" * 100)
-    
-    # Validate the schedule
-    print("\n=== Schedule Validation ===")
-    if config.validate_schedule(schedule):
-        print("✅ Schedule is valid")
-        print("✅ Videos are properly distributed across days")
-        print("✅ Minimum interval between uploads is maintained")
-        print("✅ Maximum videos per week limit is respected")
-    else:
-        print("❌ Schedule validation failed")
-        return
-    
-    # Print day-wise distribution
-    print("\n=== Day-wise Distribution ===")
-    day_counts = {}
-    for time in schedule:
-        local_time = time.astimezone(config.timezone)
-        day = local_time.strftime('%A')
-        day_counts[day] = day_counts.get(day, 0) + 1
-    
-    for day, count in sorted(day_counts.items()):
-        print(f"{day:<10}: {count} video(s)")
-    
-    # Upload videos to YouTube with scheduled times
-    print("\n=== Uploading Videos to YouTube ===")
-    for video_path, publish_time in zip(video_files, schedule):
         # Ensure publish_time is within YouTube's allowed range
         now_utc = datetime.now(pytz.UTC)
         min_future_time = now_utc + timedelta(minutes=15)
@@ -181,9 +148,15 @@ def main():
         # Format publish_time as ISO 8601 without microseconds and with 'Z'
         publish_time_str = publish_time.replace(microsecond=0).isoformat().replace('+00:00', 'Z')
 
-        title = normalized_shorts_titles[normalize_path(video_path)].strip('"')  # Remove quotes from title
-        description = f"#shorts {title}"  # Add #shorts hashtag
-        tags = ["shorts", "youtube shorts", "short video"]
+        title_data = normalized_shorts_titles[normalize_path(video_path)]
+        title = title_data['title'].strip('"')  # Remove quotes from title
+        hashtags = title_data['hashtags']
+        
+        # Create description with title and hashtags
+        description = f"{title}\n\n{' '.join(hashtags)}"
+        
+        # Use hashtags as tags for the video
+        tags = hashtags + ["shorts", "youtube shorts", "short video"]
         
         video_id = upload_to_youtube(video_path, title, description, tags, publish_time=publish_time_str)
         if video_id:

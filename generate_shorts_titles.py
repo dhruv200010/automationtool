@@ -13,17 +13,26 @@ from modules.subtitle_clipper import parse_srt, find_clips_from_srt
 class ShortsTitleGenerator:
     def __init__(self):
         self.title_generator = TitleGenerator()
-        self.titles: Dict[str, str] = {}  # Store video_path: title mapping
+        self.titles: Dict[str, Tuple[str, List[str]]] = {}  # Store video_path: (title, hashtags) mapping
         self.metadata_dir = Path("output/metadata")
         self.metadata_dir.mkdir(exist_ok=True)
 
     def get_subtitle_content_for_timestamps(self, subtitle_path: str, start_time: float, end_time: float) -> str:
         """Get subtitle content for a specific time range"""
         try:
+            print(f"\nReading subtitle file: {subtitle_path}")
+            print(f"Time range: {start_time:.2f}s - {end_time:.2f}s")
+            
+            if not os.path.exists(subtitle_path):
+                print(f"Error: Subtitle file not found: {subtitle_path}")
+                return ""
+                
             subs = pysrt.open(subtitle_path)
             # Convert times to milliseconds
             start_ms = int(start_time * 1000)
             end_ms = int(end_time * 1000)
+            
+            print(f"Looking for subtitles between {start_ms}ms and {end_ms}ms")
             
             # Get subtitles that fall within the time range
             relevant_subs = []
@@ -34,8 +43,15 @@ class ShortsTitleGenerator:
                 # Check if subtitle overlaps with our time range
                 if (sub_start <= end_ms and sub_end >= start_ms):
                     relevant_subs.append(sub.text)
+                    print(f"Found subtitle: {sub.text}")
             
-            return " ".join(relevant_subs)
+            content = " ".join(relevant_subs)
+            if not content:
+                print("Warning: No subtitles found in the specified time range")
+            else:
+                print(f"Total subtitle content: {content[:100]}...")
+            
+            return content
         except Exception as e:
             print(f"Error reading subtitle file {subtitle_path}: {str(e)}")
             return ""
@@ -44,10 +60,11 @@ class ShortsTitleGenerator:
         """Safely encode text for console output"""
         return text.encode(sys.stdout.encoding, errors='ignore').decode()
 
-    def save_metadata(self, video_path: str, title: str, index: int):
+    def save_metadata(self, video_path: str, title: str, hashtags: List[str], index: int):
         """Save metadata for a single short"""
         metadata = {
             "title": title,
+            "hashtags": hashtags,
             "video_path": str(video_path),
             "index": index
         }
@@ -56,8 +73,8 @@ class ShortsTitleGenerator:
         with open(metadata_file, "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
 
-    def generate_title_for_video(self, video_path: str, subtitle_path: str, start_time: float, end_time: float) -> str:
-        """Generate title for a single video using its corresponding subtitle content"""
+    def generate_title_for_video(self, video_path: str, subtitle_path: str, start_time: float, end_time: float) -> Tuple[str, List[str]]:
+        """Generate title and hashtags for a single video using its corresponding subtitle content"""
         print(f"\nProcessing video: {os.path.basename(video_path)}")
         print(f"Time range: {start_time:.2f}s - {end_time:.2f}s")
         
@@ -65,17 +82,19 @@ class ShortsTitleGenerator:
         subtitle_content = self.get_subtitle_content_for_timestamps(subtitle_path, start_time, end_time)
         if not subtitle_content:
             print(f"No subtitle content found for {video_path} between {start_time}s and {end_time}s")
-            return ""
+            return "", []
 
-        # Generate title using the subtitle content
-        title = self.title_generator.generate_title(subtitle_content)
-        if title:
+        # Generate title and hashtags using the subtitle content
+        result = self.title_generator.generate_title_and_hashtags(subtitle_content)
+        if result:
+            title, hashtags = result
             safe_title = self.safe_encode(title)
             print(f"Generated title: {safe_title}")
-            return title
+            print(f"Generated hashtags: {' '.join(hashtags)}")
+            return title, hashtags
         else:
             print(f"Failed to generate title for {video_path}")
-            return ""
+            return "", []
 
     def process_all_shorts(self, shorts_dir: str, subtitles_dir: str, video_path: str):
         """Process all shorts videos and generate titles using the same timestamps as shorts creation"""
@@ -119,22 +138,26 @@ class ShortsTitleGenerator:
 
         # Process each video with its corresponding timestamp
         for i, (video_file, (start_time, end_time)) in enumerate(zip(video_files, clip_ranges)):
-            # Generate title using the corresponding subtitle content
-            title = self.generate_title_for_video(str(video_file), str(subtitle_file), start_time, end_time)
+            # Generate title and hashtags using the corresponding subtitle content
+            title, hashtags = self.generate_title_for_video(str(video_file), str(subtitle_file), start_time, end_time)
             if title:
-                self.titles[str(video_file)] = title
+                self.titles[str(video_file)] = (title, hashtags)
                 # Save metadata for this short
-                self.save_metadata(str(video_file), title, i)
+                self.save_metadata(str(video_file), title, hashtags, i)
 
         # Save titles to JSON file
         self.save_titles()
 
     def save_titles(self):
-        """Save generated titles to a JSON file"""
+        """Save generated titles and hashtags to a JSON file"""
         output_file = "shorts_titles.json"
+        # Convert the titles dictionary to a format that can be serialized to JSON
+        serializable_titles = {
+            k: {"title": v[0], "hashtags": v[1]} for k, v in self.titles.items()
+        }
         with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(self.titles, f, indent=2, ensure_ascii=False)
-        print(f"\nTitles saved to {output_file}")
+            json.dump(serializable_titles, f, indent=2, ensure_ascii=False)
+        print(f"\nTitles and hashtags saved to {output_file}")
 
 def main():
     # Initialize generator
