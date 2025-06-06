@@ -8,6 +8,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 import pickle
 import sys
+import re
 
 # Add the parent directory to sys.path to import youtube_config.py
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -131,7 +132,7 @@ def main():
     print("=" * 100)
     print(f"{'Video':<20} {'Title':<30} {'Scheduled Date':<15} {'Scheduled Time (IST)':<20} {'UTC Time':<20}")
     print("-" * 100)
-    
+
     for video_path, publish_time in zip(video_files, schedule):
         # Ensure publish_time is within YouTube's allowed range
         now_utc = datetime.now(pytz.UTC)
@@ -149,10 +150,18 @@ def main():
         publish_time_str = publish_time.replace(microsecond=0).isoformat().replace('+00:00', 'Z')
 
         title_data = normalized_shorts_titles[normalize_path(video_path)]
-        title = title_data['title'].strip('"')  # Remove quotes from title
-        hashtags = title_data['hashtags']
         
-        # Create description with title and hashtags
+        # Clean up title
+        title = title_data['title'].strip('"')  # Remove quotes
+        title = re.sub(r'^Title:\s*', '', title, flags=re.IGNORECASE)  # Remove "Title:" prefix
+        title = re.sub(r'\{(\w+)\}', r'\1', title)  # Remove curly braces from title
+        
+        # Clean up hashtags
+        hashtags = [tag.strip() for tag in title_data['hashtags']]  # Remove any extra spaces
+        hashtags = [re.sub(r'[{}]', '', tag) for tag in hashtags]  # Remove curly braces
+        hashtags = [tag if tag.startswith('#') else f"#{tag}" for tag in hashtags]  # Ensure all tags start with #
+        
+        # Create description with clean title and hashtags
         description = f"{title}\n\n{' '.join(hashtags)}"
         
         # Use hashtags as tags for the video

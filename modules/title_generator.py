@@ -20,21 +20,25 @@ class TitleGenerator:
     def extract_title_and_hashtags(self, text: str) -> Optional[Tuple[str, list]]:
         """Extract title and hashtags from various response formats"""
         try:
-            # Remove any quotes around the title
+            # Remove any quotes around the title and "Title:" prefix
             text = text.strip('"')
+            text = re.sub(r'^Title:\s*', '', text, flags=re.IGNORECASE)
             
             # Split by newlines and remove empty lines
             lines = [line.strip() for line in text.split('\n') if line.strip()]
             
-            # Get the first line as title
+            # Get the first line as title and clean it
             title = lines[0]
+            # Remove curly braces from the title
+            title = re.sub(r'\{(\w+)\}', r'\1', title)
             
             # Extract hashtags from all lines
             hashtags = []
             for line in lines:
-                # Find all hashtags in the line
-                found_tags = re.findall(r'#\w+', line)
-                hashtags.extend(found_tags)
+                # Find all hashtags in the line, including those with curly braces
+                found_tags = re.findall(r'#\{?(\w+)\}?', line)
+                # Convert to proper hashtag format
+                hashtags.extend([f"#{tag}" for tag in found_tags])
             
             # Remove duplicates and limit to 4 tags
             hashtags = list(dict.fromkeys(hashtags))[:4]
