@@ -1,19 +1,50 @@
+import os
 import sys
-import subprocess
 import shutil
 from pathlib import Path
+import subprocess
 from modules.transcription import TranscriptionHandler
 
 def run_command(cmd, description):
-    """Run a command and print its output."""
+    """Run a command and print its output"""
     print(f"\n{description}...")
-    print(f"Running: {' '.join(str(c) for c in cmd)}")
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if result.returncode != 0:
-        print("Error Output:")
-        print(result.stderr)
-        raise Exception(f"Command failed: {' '.join(cmd)}")
-    print("Success!")
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True
+    )
+    
+    for line in process.stdout:
+        print(line.strip())
+    
+    process.wait()
+    if process.returncode != 0:
+        raise Exception(f"Command failed with return code {process.returncode}")
+
+def modify_ass_file(ass_path):
+    """Modify ASS file to center subtitles vertically"""
+    with open(ass_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    # Add or modify the Style section to center subtitles vertically
+    style_section = """
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,14,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,8,10,10,200,1
+"""
+    
+    # If the file already has a Style section, replace it
+    if "[V4+ Styles]" in content:
+        parts = content.split("[V4+ Styles]")
+        content = parts[0] + style_section + parts[1].split("\n\n", 1)[1]
+    else:
+        # Add the Style section after the Script Info section
+        parts = content.split("[Script Info]")
+        content = parts[0] + "[Script Info]" + parts[1].split("\n\n", 1)[0] + style_section + parts[1].split("\n\n", 1)[1]
+    
+    with open(ass_path, 'w', encoding='utf-8') as f:
+        f.write(content)
 
 def main():
     if len(sys.argv) != 2:
@@ -53,7 +84,12 @@ def main():
         shutil.copy2(ass_path, temp_ass_path)
         print("ASS file copied successfully.")
         
-        # Step 4: Burn subtitles (NOTE: no quotes around `ass=` value)
+        # Step 4: Modify ASS file to center subtitles
+        print("\nStep 4: Modifying ASS file to center subtitles...")
+        modify_ass_file(temp_ass_path)
+        print("ASS file modified successfully.")
+        
+        # Step 5: Burn subtitles (NOTE: no quotes around `ass=` value)
         output_path = output_dir / f"{video_name}_with_subs.mp4"
         run_command([
             "ffmpeg",
