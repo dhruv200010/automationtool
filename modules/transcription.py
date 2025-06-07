@@ -45,8 +45,17 @@ class TranscriptionHandler:
             for i, seg in enumerate(segments):
                 start = format_timestamp(seg['start'])
                 end = format_timestamp(seg['end'])
-                text = seg['text'].strip()
-                f.write(f"{i+1}\n{start} --> {end}\n{text}\n\n")
+                text = seg['text'].strip().title()
+                
+                # Split text into words and format into max 2 lines with 2 words each
+                words = text.split()
+                formatted_lines = []
+                for i in range(0, min(len(words), 4), 2):  # Process max 4 words (2 lines × 2 words)
+                    line = ' '.join(words[i:i+2])
+                    formatted_lines.append(line)
+                
+                formatted_text = '\n'.join(formatted_lines)
+                f.write(f"{i+1}\n{start} --> {end}\n{formatted_text}\n\n")
     
     def _convert_srt_to_ass(self, srt_path):
         """Convert SRT file to ASS format using FFmpeg."""

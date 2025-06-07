@@ -26,7 +26,7 @@ Style: Highlight2,Montserrat Black,16,&H00FB12C0,&H000000FF,&H00000000,&H0000000
 Style: Highlight3,Montser Black,16,&H0000B557,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,8,10,10,200,1
 """
 
-def create_karaoke_dialogue(words, start_time, end_time):
+def create_karaoke_dialogue(words, start_time, end_time, start_word_index=0):
     """Create dialogue entries for karaoke effect"""
     if not words:
         return ""
@@ -51,7 +51,8 @@ def create_karaoke_dialogue(words, start_time, end_time):
         for j, w in enumerate(words):
             if j == i:
                 # Current word gets highlighted with proper ASS override syntax
-                color_index = i % 3
+                # Use the global word index for color
+                color_index = (start_word_index + j) % 3
                 line.append(f"{{\\c{highlight_colors[color_index]}}}{w}{{\\c&H00FFFFFF&}}")
             else:
                 # Other words stay white
@@ -86,6 +87,7 @@ def modify_ass_file(ass_path):
     # Create new dialogue entries
     new_dialogues = []
     line_counter = 1  # Counter for unique layers per line
+    global_word_index = 0  # Global counter for continuous word coloring
     
     for line in content.split("\n"):
         if line.startswith("Dialogue:"):
@@ -100,13 +102,17 @@ def modify_ass_file(ass_path):
                 words = text.split()
                 
                 # Create karaoke-style dialogue entries with unique layer
-                new_dialogues.append(create_karaoke_dialogue(words, 
+                dialogue_entries = create_karaoke_dialogue(words, 
                     float(start_time.split(":")[0])*3600 + 
                     float(start_time.split(":")[1])*60 + 
                     float(start_time.split(":")[2]),
                     float(end_time.split(":")[0])*3600 + 
                     float(end_time.split(":")[1])*60 + 
-                    float(end_time.split(":")[2])))
+                    float(end_time.split(":")[2]),
+                    global_word_index)
+                
+                new_dialogues.append(dialogue_entries)
+                global_word_index += len(words)  # Increment word index by number of words
                 line_counter += 1
     
     # Combine all sections
