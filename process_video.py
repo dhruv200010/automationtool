@@ -20,10 +20,10 @@ def create_karaoke_style():
     return """
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Montserrat Black,16,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,8,10,10,200,1
-Style: Highlight1,Montserrat Black,16,&H00F767C8,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,8,10,10,200,1
-Style: Highlight2,Montserrat Black,16,&H00FB12C0,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,8,10,10,200,1
-Style: Highlight3,Montser Black,16,&H0000B557,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,8,10,10,200,1
+Style: Default,Montserrat Black,16,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,8,10,10,170,1
+Style: Highlight1,Montserrat Black,16,&H00C867F7,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,8,10,10,170,1
+Style: Highlight2,Montserrat Black,16,&H0012C0FB,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,8,10,10,170,1
+Style: Highlight3,Montser Black,16,&H00B55700,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,8,10,10,170,1
 """
 
 def create_karaoke_dialogue(words, start_time, end_time, start_word_index=0):
@@ -36,11 +36,27 @@ def create_karaoke_dialogue(words, start_time, end_time, start_word_index=0):
     time_per_word = total_duration / len(words)
     
     # Colors for highlighting in the exact sequence requested
-    highlight_colors = ["&HC867F7&", "&H12C0FB&", "&HB55700&"]
+    highlight_colors = ["&H00C867F7&", "&H0012C0FB&", "&H00B55700&"]
     
     dialogue_entries = []
     # Use a unique layer number for each line to ensure proper replacement
     layer = 1
+    
+    # Split words into lines of 2 words each, max 2 lines
+    word_lines = []
+    current_line = []
+    for word in words:
+        current_line.append(word)
+        if len(current_line) == 2:
+            word_lines.append(current_line)
+            current_line = []
+            if len(word_lines) == 2:  # Max 2 lines
+                break
+    if current_line and len(word_lines) < 2:  # Add remaining words if we haven't hit 2 lines
+        word_lines.append(current_line)
+    
+    # Flatten word_lines back into a list for processing
+    words = [word for line in word_lines for word in line]
     
     for i, word in enumerate(words):
         word_start = start_time + (i * time_per_word)
@@ -48,22 +64,45 @@ def create_karaoke_dialogue(words, start_time, end_time, start_word_index=0):
         
         # Create the line with the current word highlighted
         line = []
+        current_line_words = []
+        line_count = 0
+        
         for j, w in enumerate(words):
-            if j == i:
-                # Current word gets highlighted with proper ASS override syntax
-                # Use the global word index for color
-                color_index = (start_word_index + j) % 3
-                line.append(f"{{\\c{highlight_colors[color_index]}}}{w}{{\\c&H00FFFFFF&}}")
-            else:
-                # Other words stay white
-                line.append(w)
+            # Fix apostrophe capitalization
+            if "'" in w:
+                parts = w.split("'")
+                w = parts[0] + "'" + parts[1].lower()
+            
+            current_line_words.append(w)
+            
+            # Add line break after every 2 words
+            if len(current_line_words) == 2:
+                # Process the current line
+                for k, word_in_line in enumerate(current_line_words):
+                    word_index = j - 1 + k
+                    if word_index == i:
+                        # Current word gets highlighted with proper ASS override syntax
+                        color_index = (start_word_index + i) % 3
+                        line.append(f"{{\\c{highlight_colors[color_index]}\\1a&H00&}}{word_in_line}{{\\c&H00FFFFFF&\\1a&H00&}}")
+                    else:
+                        # Other words stay white with full opacity
+                        line.append(f"{{\\1a&H00&}}{word_in_line}")
+                
+                # Add line break if not the last line
+                if line_count < len(word_lines) - 1:
+                    line.append("\\N")
+                
+                current_line_words = []
+                line_count += 1
         
         # Format time as h:mm:ss.cc
         start_str = f"{int(word_start//3600):01d}:{int((word_start%3600)//60):02d}:{int(word_start%60):02d}.{int((word_start%1)*100):02d}"
         end_str = f"{int(word_end//3600):01d}:{int((word_end%3600)//60):02d}:{int(word_end%60):02d}.{int((word_end%1)*100):02d}"
         
-        dialogue_entry = f"Dialogue: {layer},{start_str},{end_str},Default,,0,0,0,,{' '.join(line)}"
-        dialogue_entries.append(dialogue_entry)
+        # Only add the dialogue entry if it's not empty
+        if line:
+            dialogue_entry = f"Dialogue: {layer},{start_str},{end_str},Default,,0,0,0,,{' '.join(line)}"
+            dialogue_entries.append(dialogue_entry)
     
     return "\n".join(dialogue_entries)
 
@@ -75,7 +114,7 @@ def modify_ass_file(ass_path):
     # Add the style section
     style_section = create_karaoke_style()
     
-    # Extract the Events section
+    # Extract the Events section header
     events_section = ""
     if "[Events]" in content:
         events_start = content.find("[Events]")
@@ -89,6 +128,13 @@ def modify_ass_file(ass_path):
     line_counter = 1  # Counter for unique layers per line
     global_word_index = 0  # Global counter for continuous word coloring
     
+    # Only keep the non-Dialogue lines
+    non_dialogue_lines = [
+        line for line in content.split("\n")
+        if not line.startswith("Dialogue:")
+    ]
+    
+    # Process the original dialogue lines to create karaoke versions
     for line in content.split("\n"):
         if line.startswith("Dialogue:"):
             # Parse the dialogue line
@@ -98,26 +144,36 @@ def modify_ass_file(ass_path):
                 end_time = parts[2]
                 text = parts[9]
                 
-                # Split text into words
-                words = text.split()
+                # Split text into words, preserving \N
+                words = []
+                for part in text.split("\\N"):
+                    words.extend(part.split())
+                    if "\\N" in text:
+                        words.append("\\N")
                 
-                # Create karaoke-style dialogue entries with unique layer
-                dialogue_entries = create_karaoke_dialogue(words, 
-                    float(start_time.split(":")[0])*3600 + 
-                    float(start_time.split(":")[1])*60 + 
-                    float(start_time.split(":")[2]),
-                    float(end_time.split(":")[0])*3600 + 
-                    float(end_time.split(":")[1])*60 + 
-                    float(end_time.split(":")[2]),
-                    global_word_index)
+                # Remove empty strings and trailing \N
+                words = [w for w in words if w and w != "\\N"]
                 
-                new_dialogues.append(dialogue_entries)
-                global_word_index += len(words)  # Increment word index by number of words
-                line_counter += 1
+                # Only process if we have words
+                if words:
+                    # Create karaoke-style dialogue entries with unique layer
+                    dialogue_entries = create_karaoke_dialogue(words, 
+                        float(start_time.split(":")[0])*3600 + 
+                        float(start_time.split(":")[1])*60 + 
+                        float(start_time.split(":")[2]),
+                        float(end_time.split(":")[0])*3600 + 
+                        float(end_time.split(":")[1])*60 + 
+                        float(end_time.split(":")[2]),
+                        global_word_index)
+                    
+                    if dialogue_entries:  # Only add if we have entries
+                        new_dialogues.append(dialogue_entries)
+                        global_word_index += len(words)  # Increment word index by number of words
+                        line_counter += 1
     
-    # Combine all sections
-    new_content = content.split("[V4+ Styles]")[0] + style_section + "\n"
-    new_content += events_section + "\n"
+    # Combine all sections, excluding original dialogue lines
+    new_content = "\n".join(non_dialogue_lines).split("[V4+ Styles]")[0] + style_section + "\n"
+    new_content += "[Events]\n"
     new_content += "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     new_content += "\n".join(new_dialogues)
     
@@ -173,7 +229,7 @@ def main():
             "ffmpeg",
             "-y",  # Overwrite output
             "-i", str(video_path),
-            "-vf", f"ass={temp_ass_path}",
+            "-vf", f"ass={temp_ass_path},format=yuv420p,colorspace=all=bt709:iall=bt709:fast=1",
             "-c:v", "libx264",
             "-crf", "23",
             "-preset", "veryfast",
@@ -183,6 +239,10 @@ def main():
         ], "Burning subtitles into video")
 
         print(f"\nProcessing complete! Output video saved to: {output_path}")
+        
+        # Print FFmpeg version for debugging
+        print("\nFFmpeg version:")
+        run_command(["ffmpeg", "-version"], "Getting FFmpeg version")
         
     except Exception as e:
         print(f"\nError: {str(e)}")
