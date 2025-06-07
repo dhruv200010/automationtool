@@ -54,8 +54,12 @@ def find_clips_from_srt(
     segments = parse_srt(srt_path)
     clips = []
     current_clip = None
+    max_overlap = 5  # Maximum overlap between clips in seconds
     
-    for segment in segments:
+    # Get total video duration from the last segment
+    total_duration = segments[-1]['end'] if segments else 0
+    
+    for i, segment in enumerate(segments):
         text = segment['text'].lower()
         if any(keyword.lower() in text for keyword in keywords):
             if current_clip is None:
@@ -65,8 +69,8 @@ def find_clips_from_srt(
                     'text': text
                 }
             else:
-                # Extend current clip if it's close to the previous one
-                if segment['start'] - current_clip['end'] < 2:
+                # Extend current clip if it's close to the previous one and within max overlap
+                if segment['start'] - current_clip['end'] < max_overlap:
                     current_clip['end'] = segment['end']
                     current_clip['text'] += f" {text}"
                 else:
@@ -116,6 +120,26 @@ def find_clips_from_srt(
             'end': end_time,
             'text': current_clip['text']
         })
+    
+    # Add clips for the start and end portions if they don't exist
+    if clips:
+        # Add start portion if first clip doesn't start at 0
+        if clips[0]['start'] > 0:
+            start_clip = {
+                'start': 0,
+                'end': min(clips[0]['start'], max_duration),
+                'text': "Video Introduction"
+            }
+            clips.insert(0, start_clip)
+        
+        # Add end portion if last clip doesn't end at total duration
+        if clips[-1]['end'] < total_duration:
+            end_clip = {
+                'start': max(clips[-1]['end'], total_duration - max_duration),
+                'end': total_duration,
+                'text': "Video Conclusion"
+            }
+            clips.append(end_clip)
     
     return clips
 
