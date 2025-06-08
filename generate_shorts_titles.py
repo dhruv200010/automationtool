@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class ShortsTitleGenerator:
     def __init__(self):
         self.title_generator = TitleGenerator()
-        self.titles: Dict[str, Tuple[str, List[str]]] = {}  # Store video_path: (title, hashtags) mapping
+        self.titles: Dict[str, Tuple[str, List[str], str]] = {}  # Store video_path: (title, hashtags, description) mapping
         self.metadata_dir = Path("output/metadata")
         self.metadata_dir.mkdir(exist_ok=True)
 
@@ -63,11 +63,12 @@ class ShortsTitleGenerator:
         """Safely encode text for console output"""
         return text.encode(sys.stdout.encoding, errors='ignore').decode()
 
-    def save_metadata(self, video_path: str, title: str, hashtags: List[str], index: int):
+    def save_metadata(self, video_path: str, title: str, hashtags: List[str], description: str, index: int):
         """Save metadata for a single short"""
         metadata = {
             "title": title,
             "hashtags": hashtags,
+            "description": description,
             "video_path": str(video_path),
             "index": index
         }
@@ -76,8 +77,8 @@ class ShortsTitleGenerator:
         with open(metadata_file, "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
 
-    def generate_title_for_video(self, video_path: str, subtitle_path: str, start_time: float, end_time: float) -> Tuple[str, List[str]]:
-        """Generate title and hashtags for a single video using its corresponding subtitle content"""
+    def generate_title_for_video(self, video_path: str, subtitle_path: str, start_time: float, end_time: float) -> Tuple[str, List[str], str]:
+        """Generate title, hashtags, and description for a single video using its corresponding subtitle content"""
         logger.info(f"\nProcessing video: {os.path.basename(video_path)}")
         logger.info(f"Time range: {start_time:.2f}s - {end_time:.2f}s")
         
@@ -85,19 +86,20 @@ class ShortsTitleGenerator:
         subtitle_content = self.get_subtitle_content_for_timestamps(subtitle_path, start_time, end_time)
         if not subtitle_content:
             logger.error(f"No subtitle content found for {video_path} between {start_time}s and {end_time}s")
-            return "", []
+            return "", [], ""
 
-        # Generate title and hashtags using the subtitle content
+        # Generate title, hashtags, and description using the subtitle content
         result = self.title_generator.generate_title_and_hashtags(subtitle_content)
         if result:
-            title, hashtags = result
+            title, hashtags, description = result
             safe_title = self.safe_encode(title)
             logger.info(f"Generated title: {safe_title}")
             logger.info(f"Generated hashtags: {' '.join(hashtags)}")
-            return title, hashtags
+            logger.info(f"Generated description: {description}")
+            return title, hashtags, description
         else:
             logger.error(f"Failed to generate title for {video_path}")
-            return "", []
+            return "", [], ""
 
     def process_all_shorts(self, shorts_dir: str, subtitles_dir: str, video_path: str):
         """Process all shorts videos and generate titles using the same timestamps as shorts creation"""
@@ -150,31 +152,31 @@ class ShortsTitleGenerator:
         # Process each video with its corresponding timestamp
         for i, (video_file, clip) in enumerate(zip(video_files, clip_ranges)):
             logger.info(f"Processing video {i+1}/{len(video_files)}: {video_file}")
-            # Generate title and hashtags using the corresponding subtitle content
-            title, hashtags = self.generate_title_for_video(
+            # Generate title, hashtags, and description using the corresponding subtitle content
+            title, hashtags, description = self.generate_title_for_video(
                 str(video_file), 
                 str(subtitle_file), 
                 clip['start'], 
                 clip['end']
             )
             if title:
-                self.titles[str(video_file)] = (title, hashtags)
+                self.titles[str(video_file)] = (title, hashtags, description)
                 # Save metadata for this short
-                self.save_metadata(str(video_file), title, hashtags, i)
+                self.save_metadata(str(video_file), title, hashtags, description, i)
 
         # Save titles to JSON file
         self.save_titles()
 
     def save_titles(self):
-        """Save generated titles and hashtags to a JSON file"""
+        """Save generated titles, hashtags, and descriptions to a JSON file"""
         output_file = "shorts_titles.json"
         # Convert the titles dictionary to a format that can be serialized to JSON
         serializable_titles = {
-            k: {"title": v[0], "hashtags": v[1]} for k, v in self.titles.items()
+            k: {"title": v[0], "hashtags": v[1], "description": v[2]} for k, v in self.titles.items()
         }
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(serializable_titles, f, indent=2, ensure_ascii=False)
-        logger.info(f"\nTitles and hashtags saved to {output_file}")
+        logger.info(f"\nTitles, hashtags, and descriptions saved to {output_file}")
 
 def main():
     # Initialize generator

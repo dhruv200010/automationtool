@@ -161,8 +161,11 @@ def main():
         hashtags = [re.sub(r'[{}]', '', tag) for tag in hashtags]  # Remove curly braces
         hashtags = [tag if tag.startswith('#') else f"#{tag}" for tag in hashtags]  # Ensure all tags start with #
         
-        # Create description with clean title and hashtags
-        description = f"{title}\n\n{' '.join(hashtags)}"
+        # Get description
+        description = title_data.get('description', '')
+        if not description:
+            # Fallback to title and hashtags if no description
+            description = f"{title}\n\n{' '.join(hashtags)}"
         
         # Use hashtags as tags for the video
         tags = hashtags + ["shorts", "youtube shorts", "short video"]
