@@ -16,7 +16,7 @@ if str(project_root) not in sys.path:
 
 from modules.schedule_config import ScheduleConfig
 from modules.upload_youtube import upload_to_youtube
-from config.youtube_config import YOUTUBE_API_SCOPES
+from config.youtube_config import YOUTUBE_API_SCOPES, TOKEN_FILE, CLIENT_SECRETS_FILE
 
 # Define the scopes
 SCOPES = YOUTUBE_API_SCOPES
@@ -24,21 +24,28 @@ SCOPES = YOUTUBE_API_SCOPES
 def get_authenticated_service():
     credentials = None
     # The file token.pickle stores the user's access and refresh tokens
-    token_path = project_root / 'token.pickle'
-    if token_path.exists():
-        with open(token_path, 'rb') as token:
+    if TOKEN_FILE.exists():
+        with open(TOKEN_FILE, 'rb') as token:
             credentials = pickle.load(token)
     # If there are no (valid) credentials available, let the user log in.
     if not credentials or not credentials.valid:
         if credentials and credentials.expired and credentials.refresh_token:
             credentials.refresh(Request())
         else:
-            client_secrets_path = project_root / 'client_secrets.json'
+            if not CLIENT_SECRETS_FILE.exists():
+                print(f"Error: {CLIENT_SECRETS_FILE} not found!")
+                print("Please follow these steps:")
+                print("1. Go to Google Cloud Console")
+                print("2. Create a project and enable YouTube Data API")
+                print("3. Configure OAuth consent screen")
+                print("4. Create OAuth 2.0 credentials")
+                print(f"5. Download and place in {CLIENT_SECRETS_FILE}")
+                sys.exit(1)
             flow = InstalledAppFlow.from_client_secrets_file(
-                str(client_secrets_path), SCOPES)
+                str(CLIENT_SECRETS_FILE), SCOPES)
             credentials = flow.run_local_server(port=0)
         # Save the credentials for the next run
-        with open(token_path, 'wb') as token:
+        with open(TOKEN_FILE, 'wb') as token:
             pickle.dump(credentials, token)
 
     return credentials

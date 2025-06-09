@@ -1,8 +1,12 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+# Get the config directory path
+CONFIG_DIR = Path(__file__).parent
 
 # YouTube API Configuration
 YOUTUBE_API_SCOPES = ['https://www.googleapis.com/auth/youtube.upload',
@@ -13,8 +17,8 @@ DEFAULT_VIDEO_CATEGORY = os.getenv('DEFAULT_VIDEO_CATEGORY', '22')  # People & B
 DEFAULT_PRIVACY_STATUS = os.getenv('DEFAULT_PRIVACY_STATUS', 'private')
 
 # File paths
-TOKEN_FILE = 'token.pickle'
-CLIENT_SECRETS_FILE = 'client_secrets.json'
+TOKEN_FILE = CONFIG_DIR / 'token.pickle'
+CLIENT_SECRETS_FILE = CONFIG_DIR / 'client_secrets.json'
 
 # Video settings
 MAX_VIDEO_LENGTH = 60  # seconds
