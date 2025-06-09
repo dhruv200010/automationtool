@@ -17,8 +17,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def get_latest_video(folder_path):
-    """Get the most recent video file from the specified folder"""
+def get_all_videos(folder_path):
+    """Get all video files from the specified folder"""
     folder = Path(folder_path)
     if not folder.exists():
         logger.error(f"Error: Input folder '{folder_path}' not found!")
@@ -36,10 +36,10 @@ def get_latest_video(folder_path):
         logger.error(f"Error: No video files found in '{folder_path}'!")
         sys.exit(1)
     
-    # Sort by modification time and get the most recent
-    latest_video = max(video_files, key=os.path.getmtime)
-    logger.info(f"Found video file: {latest_video}")
-    return str(latest_video)
+    # Sort by modification time
+    video_files.sort(key=os.path.getmtime)
+    logger.info(f"Found {len(video_files)} video files")
+    return [str(video) for video in video_files]
 
 def get_input_folder():
     """Get input folder path from config file"""
@@ -101,10 +101,9 @@ def run_command(command, step_name):
         logger.error(f"Error in {step_name}: {str(e)}")
         return False
 
-def main():
-    # Get input folder from config and find the latest video
-    input_folder = get_input_folder()
-    video_file = get_latest_video(input_folder)
+def process_video(video_file):
+    """Process a single video through the pipeline"""
+    logger.info(f"\nProcessing video: {video_file}")
     
     # Define the steps
     steps = [
@@ -129,10 +128,47 @@ def main():
     # Run each step
     for step in steps:
         if not run_command(step["command"], step["name"]):
-            logger.error(f"Pipeline failed at {step['name']}")
-            sys.exit(1)
+            logger.error(f"Pipeline failed at {step['name']} for video {video_file}")
+            return False
 
-    logger.info("All steps in pipeline completed successfully!")
+    logger.info(f"Successfully processed video: {video_file}")
+    return True
+
+def main():
+    # Get input folder from config and find all videos
+    input_folder = get_input_folder()
+    video_files = get_all_videos(input_folder)
+    
+    # Track success and failure
+    successful_videos = []
+    failed_videos = []
+    
+    # Process each video
+    for video_file in video_files:
+        try:
+            if process_video(video_file):
+                successful_videos.append(video_file)
+            else:
+                failed_videos.append(video_file)
+        except Exception as e:
+            logger.error(f"Unexpected error processing video {video_file}: {str(e)}")
+            failed_videos.append(video_file)
+    
+    # Print summary
+    logger.info("\nPipeline Processing Summary:")
+    logger.info(f"Total videos processed: {len(video_files)}")
+    logger.info(f"Successfully processed: {len(successful_videos)}")
+    logger.info(f"Failed to process: {len(failed_videos)}")
+    
+    if failed_videos:
+        logger.info("\nFailed videos:")
+        for video in failed_videos:
+            logger.info(f"- {video}")
+    
+    if failed_videos:
+        sys.exit(1)  # Exit with error if any videos failed
+    else:
+        logger.info("\nAll videos processed successfully!")
 
 if __name__ == "__main__":
     main()
