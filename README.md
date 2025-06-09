@@ -33,7 +33,7 @@ A Python tool for automating YouTube video uploads with scheduling capabilities.
 
 1. **Test Authentication**
    ```bash
-   python test_auth.py
+   python auth_youtube.py
    ```
 
 2. **Upload a Video**

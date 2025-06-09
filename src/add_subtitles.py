@@ -188,8 +188,8 @@ def modify_ass_file(ass_path):
 
 def main():
     if len(sys.argv) != 2:
-        print("Usage: python src/process_video.py <video_path>")
-        print("Example: python src/process_video.py C:/Users/sendt/Downloads/long.MOV")
+        print("Usage: python src/add_subtitles.py <video_path>")
+        print("Example: python src/add_subtitles.py C:/Users/sendt/Downloads/long.MOV")
         sys.exit(1)
     
     video_path = Path(sys.argv[1])
