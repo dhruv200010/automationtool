@@ -2,7 +2,9 @@ import subprocess
 import sys
 import os
 import logging
+import json
 from datetime import datetime
+from pathlib import Path
 
 # Set up logging with UTF-8 encoding
 logging.basicConfig(
@@ -14,6 +16,56 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+def get_latest_video(folder_path):
+    """Get the most recent video file from the specified folder"""
+    folder = Path(folder_path)
+    if not folder.exists():
+        logger.error(f"Error: Input folder '{folder_path}' not found!")
+        sys.exit(1)
+    
+    # Supported video formats
+    video_extensions = ['.mp4', '.mov', '.avi', '.mkv']
+    
+    # Get all video files in the folder
+    video_files = []
+    for ext in video_extensions:
+        video_files.extend(folder.glob(f'*{ext}'))
+    
+    if not video_files:
+        logger.error(f"Error: No video files found in '{folder_path}'!")
+        sys.exit(1)
+    
+    # Sort by modification time and get the most recent
+    latest_video = max(video_files, key=os.path.getmtime)
+    logger.info(f"Found video file: {latest_video}")
+    return str(latest_video)
+
+def get_input_folder():
+    """Get input folder path from config file"""
+    config_path = Path("config/master_config.json")
+    if not config_path.exists():
+        logger.error("Error: master_config.json not found in config directory!")
+        sys.exit(1)
+    
+    try:
+        # Read the file content as a raw string first
+        with open(config_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+            # Convert Windows paths to forward slashes before JSON parsing
+            content = content.replace('\\', '/')
+            config = json.loads(content)
+            input_folder = config.get('input_folder')
+            if not input_folder:
+                logger.error("Error: 'input_folder' not found in master_config.json!")
+                sys.exit(1)
+            return input_folder
+    except json.JSONDecodeError:
+        logger.error("Error: Invalid JSON in master_config.json!")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Error reading master_config.json: {str(e)}")
+        sys.exit(1)
 
 def run_command(command, step_name):
     """Run a command and log its output"""
@@ -50,17 +102,10 @@ def run_command(command, step_name):
         return False
 
 def main():
-    if len(sys.argv) != 2:
-        logger.error("Usage: python run_pipeline.py <video_file_path>")
-        sys.exit(1)
-
-    video_file = sys.argv[1]
+    # Get input folder from config and find the latest video
+    input_folder = get_input_folder()
+    video_file = get_latest_video(input_folder)
     
-    # Check if video file exists
-    if not os.path.exists(video_file):
-        logger.error(f"Error: Video file '{video_file}' not found!")
-        sys.exit(1)
-
     # Define the steps
     steps = [
         {
