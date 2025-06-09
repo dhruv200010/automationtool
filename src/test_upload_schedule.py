@@ -16,7 +16,7 @@ if str(project_root) not in sys.path:
 
 from modules.schedule_config import ScheduleConfig
 from modules.upload_youtube import upload_to_youtube
-from youtube_config import YOUTUBE_API_SCOPES
+from config.youtube_config import YOUTUBE_API_SCOPES
 
 # Define the scopes
 SCOPES = YOUTUBE_API_SCOPES

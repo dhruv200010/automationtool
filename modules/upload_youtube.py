@@ -6,11 +6,13 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 import pickle
 import sys
-import os
+from pathlib import Path
 
-# Add the parent directory to sys.path to import youtube_config.py
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from youtube_config import (
+# Get project root directory
+project_root = Path(__file__).parent.parent
+
+# Import from config directory
+from config.youtube_config import (
     YOUTUBE_API_SCOPES,
     DEFAULT_VIDEO_CATEGORY,
     DEFAULT_PRIVACY_STATUS,
@@ -28,19 +30,21 @@ def get_authenticated_service():
     credentials = None
     
     # Check if client_secrets.json exists
-    if not os.path.exists(CLIENT_SECRETS_FILE):
-        print(f"Error: {CLIENT_SECRETS_FILE} not found!")
+    client_secrets_path = project_root / CLIENT_SECRETS_FILE
+    if not client_secrets_path.exists():
+        print(f"Error: {client_secrets_path} not found!")
         print("Please follow these steps:")
         print("1. Go to Google Cloud Console")
         print("2. Create a project and enable YouTube Data API")
         print("3. Configure OAuth consent screen")
         print("4. Create OAuth 2.0 credentials")
-        print(f"5. Download and rename to {CLIENT_SECRETS_FILE}")
+        print(f"5. Download and rename to {client_secrets_path}")
         sys.exit(1)
     
     # Check if we have stored credentials
-    if os.path.exists(TOKEN_FILE):
-        with open(TOKEN_FILE, 'rb') as token:
+    token_path = project_root / TOKEN_FILE
+    if token_path.exists():
+        with open(token_path, 'rb') as token:
             credentials = pickle.load(token)
     
     # If credentials are invalid or don't exist, get new ones
@@ -50,12 +54,12 @@ def get_authenticated_service():
                 credentials.refresh(Request())
             except Exception as e:
                 print(f"Error refreshing credentials: {str(e)}")
-                print(f"Please delete {TOKEN_FILE} and try again")
+                print(f"Please delete {token_path} and try again")
                 sys.exit(1)
         else:
             try:
                 flow = InstalledAppFlow.from_client_secrets_file(
-                    CLIENT_SECRETS_FILE, YOUTUBE_API_SCOPES)
+                    str(client_secrets_path), YOUTUBE_API_SCOPES)
                 credentials = flow.run_local_server(port=0)
             except Exception as e:
                 print(f"Error during authentication: {str(e)}")
@@ -66,17 +70,18 @@ def get_authenticated_service():
                 sys.exit(1)
         
         # Save credentials for future use
-        with open(TOKEN_FILE, 'wb') as token:
+        with open(token_path, 'wb') as token:
             pickle.dump(credentials, token)
     
     return build('youtube', 'v3', credentials=credentials)
 
 def validate_file(file_path, file_type='video'):
     """Validate if file exists and has correct format"""
-    if not os.path.exists(file_path):
+    path = Path(file_path)
+    if not path.exists():
         return False, f"File not found: {file_path}"
     
-    ext = os.path.splitext(file_path)[1].lower()
+    ext = path.suffix.lower()
     if file_type == 'video' and ext not in SUPPORTED_VIDEO_FORMATS:
         return False, f"Unsupported video format: {ext}"
     elif file_type == 'thumbnail' and ext not in SUPPORTED_THUMBNAIL_FORMATS:

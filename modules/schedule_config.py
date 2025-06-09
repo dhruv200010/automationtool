@@ -7,6 +7,7 @@ from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 import sys
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ def safe_log(logger_func, text):
         logger_func(safe_encode(text))
 
 class ScheduleConfig:
-    def __init__(self, config_file: str = 'schedule_config.json', credentials=None):
+    def __init__(self, config_file: str = 'config/schedule_config.json', credentials=None):
         self.config_file = config_file
         self.credentials = credentials  # Store the credentials
         # Default to India timezone
@@ -29,8 +30,9 @@ class ScheduleConfig:
 
     def load_config(self):
         """Load configuration from JSON file or use defaults"""
-        if os.path.exists(self.config_file):
-            with open(self.config_file, 'r') as f:
+        config_path = Path(__file__).parent.parent / self.config_file
+        if config_path.exists():
+            with open(config_path, 'r') as f:
                 config = json.load(f)
                 self.daily_schedule = {
                     day: datetime.strptime(t, '%H:%M').time()
@@ -70,7 +72,8 @@ class ScheduleConfig:
             'max_videos_per_week': self.max_videos_per_week,
             'timezone': self.timezone.zone
         }
-        with open(self.config_file, 'w') as f:
+        config_path = Path(__file__).parent.parent / self.config_file
+        with open(config_path, 'w') as f:
             json.dump(config, f, indent=4)
 
     def get_next_publish_time(self, current_time: datetime, day_offset: int = 0) -> datetime:
