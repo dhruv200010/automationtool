@@ -7,6 +7,12 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 import pysrt
+
+# Add the parent directory to sys.path to import modules
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 from modules.title_generator import TitleGenerator
 from modules.subtitle_clipper import parse_srt, find_clips_from_srt
 import logging
@@ -171,14 +177,34 @@ class ShortsTitleGenerator:
 
     def save_titles(self):
         """Save generated titles, hashtags, and descriptions to a JSON file"""
-        output_file = str(Path("output") / "shorts_titles.json")
+        output_file = project_root / "output" / "shorts_titles.json"
         # Convert the titles dictionary to a format that can be serialized to JSON
-        serializable_titles = {
-            k: {"title": v[0], "hashtags": v[1], "description": v[2]} for k, v in self.titles.items()
-        }
+        serializable_titles = {}
+        for k, v in self.titles.items():
+            # Convert absolute path to relative path if it's within project root
+            try:
+                rel_path = str(Path(k).relative_to(project_root)).replace('\\', '/')
+            except ValueError:
+                # If path is not in project root, use it as is
+                rel_path = str(Path(k)).replace('\\', '/')
+            serializable_titles[rel_path] = v
+
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(serializable_titles, f, indent=2, ensure_ascii=False)
         logger.info(f"\nTitles, hashtags, and descriptions saved to {output_file}")
+
+    def load_titles(self):
+        """Load existing titles from JSON file if it exists"""
+        output_file = project_root / "output" / "shorts_titles.json"
+        if output_file.exists():
+            with open(output_file, "r", encoding="utf-8") as f:
+                loaded_titles = json.load(f)
+                # Convert the loaded paths back to absolute paths
+                self.titles = {
+                    str(project_root / k): v 
+                    for k, v in loaded_titles.items()
+                }
+            logger.info(f"Loaded {len(self.titles)} existing titles from {output_file}")
 
 def main():
     # Initialize generator

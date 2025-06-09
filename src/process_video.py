@@ -3,6 +3,12 @@ import sys
 import shutil
 from pathlib import Path
 import subprocess
+
+# Add the parent directory to sys.path to import modules
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 from modules.transcription import TranscriptionHandler
 
 def run_command(cmd, description):
@@ -182,12 +188,12 @@ def modify_ass_file(ass_path):
 
 def main():
     if len(sys.argv) != 2:
-        print("Usage: python process_video.py <video_path>")
-        print("Example: python process_video.py C:/Users/sendt/Downloads/long.MOV")
+        print("Usage: python src/process_video.py <video_path>")
+        print("Example: python src/process_video.py C:/Users/sendt/Downloads/long.MOV")
         sys.exit(1)
     
-    video_path = sys.argv[1]
-    video_name = Path(video_path).stem
+    video_path = Path(sys.argv[1])
+    video_name = video_path.stem
 
     output_dir = Path("output")
     subtitles_dir = output_dir / "subtitles"

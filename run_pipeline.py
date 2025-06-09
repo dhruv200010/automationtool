@@ -65,19 +65,19 @@ def main():
     steps = [
         {
             "name": "Step 1: Process video and add subtitles",
-            "command": f'python process_video.py "{video_file}"'
+            "command": f'python src/process_video.py "{video_file}"'
         },
         {
             "name": "Step 2: Create shorts from full video",
-            "command": 'python create_shorts.py'
+            "command": 'python src/create_shorts.py'
         },
         {
             "name": "Step 3: Generate titles/tags/descriptions",
-            "command": 'python generate_shorts_titles.py'
+            "command": 'python src/generate_shorts_titles.py'
         },
         {
             "name": "Step 4: Upload shorts and schedule",
-            "command": 'python test_upload_schedule.py'
+            "command": 'python src/test_upload_schedule.py'
         }
     ]
 
