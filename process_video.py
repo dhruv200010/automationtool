@@ -189,10 +189,10 @@ def main():
     video_path = sys.argv[1]
     video_name = Path(video_path).stem
 
-    subtitles_dir = Path("subtitles")
     output_dir = Path("output")
-    subtitles_dir.mkdir(exist_ok=True)
+    subtitles_dir = output_dir / "subtitles"
     output_dir.mkdir(exist_ok=True)
+    subtitles_dir.mkdir(exist_ok=True)
 
     try:
         # Step 1: Generate SRT

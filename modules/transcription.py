@@ -7,12 +7,12 @@ from pathlib import Path
 class TranscriptionHandler:
     def __init__(self):
         self.model = whisper.load_model("base")
-        self.subtitles_dir = Path("subtitles")
         self.output_dir = Path("output")
+        self.subtitles_dir = self.output_dir / "subtitles"
         
         # Create directories if they don't exist
-        self.subtitles_dir.mkdir(exist_ok=True)
         self.output_dir.mkdir(exist_ok=True)
+        self.subtitles_dir.mkdir(exist_ok=True)
     
     def transcribe_video(self, video_path):
         """Transcribe a video file and save subtitles."""

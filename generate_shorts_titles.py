@@ -106,7 +106,7 @@ class ShortsTitleGenerator:
         logger.info(f"Current Working Directory: {os.getcwd()}")
         
         shorts_path = Path(shorts_dir)
-        subtitles_path = Path(subtitles_dir)
+        subtitles_path = Path("output/subtitles")  # Changed to use output/subtitles directory
 
         # Get all video files
         video_files = sorted(list(shorts_path.glob("*.mp4")))
@@ -145,31 +145,33 @@ class ShortsTitleGenerator:
         )
         logger.info(f"Found {len(clip_ranges)} clip ranges")
 
-        if len(video_files) != len(clip_ranges):
-            logger.error(f"Number of videos ({len(video_files)}) doesn't match number of clip ranges ({len(clip_ranges)})")
-            return
-
         # Process each video with its corresponding timestamp
-        for i, (video_file, clip) in enumerate(zip(video_files, clip_ranges)):
+        for i, video_file in enumerate(video_files):
             logger.info(f"Processing video {i+1}/{len(video_files)}: {video_file}")
-            # Generate title, hashtags, and description using the corresponding subtitle content
-            title, hashtags, description = self.generate_title_for_video(
-                str(video_file), 
-                str(subtitle_file), 
-                clip['start'], 
-                clip['end']
-            )
-            if title:
-                self.titles[str(video_file)] = (title, hashtags, description)
-                # Save metadata for this short
-                self.save_metadata(str(video_file), title, hashtags, description, i)
+            
+            # Get the clip range for this video
+            if i < len(clip_ranges):
+                clip = clip_ranges[i]
+                # Generate title, hashtags, and description using the corresponding subtitle content
+                title, hashtags, description = self.generate_title_for_video(
+                    str(video_file), 
+                    str(subtitle_file), 
+                    clip['start'], 
+                    clip['end']
+                )
+                if title:
+                    self.titles[str(video_file)] = (title, hashtags, description)
+                    # Save metadata for this short
+                    self.save_metadata(str(video_file), title, hashtags, description, i)
+            else:
+                logger.warning(f"No clip range found for video {video_file}, skipping title generation")
 
         # Save titles to JSON file
         self.save_titles()
 
     def save_titles(self):
         """Save generated titles, hashtags, and descriptions to a JSON file"""
-        output_file = "shorts_titles.json"
+        output_file = str(Path("output") / "shorts_titles.json")
         # Convert the titles dictionary to a format that can be serialized to JSON
         serializable_titles = {
             k: {"title": v[0], "hashtags": v[1], "description": v[2]} for k, v in self.titles.items()

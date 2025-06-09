@@ -9,6 +9,7 @@ from google.auth.transport.requests import Request
 import pickle
 import sys
 import re
+from pathlib import Path
 
 # Add the parent directory to sys.path to import youtube_config.py
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -29,7 +30,7 @@ def get_authenticated_service():
             credentials.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials', SCOPES)
+                'client_secrets.json', SCOPES)
             credentials = flow.run_local_server(port=0)
         # Save the credentials for the next run
         with open('token.pickle', 'wb') as token:
@@ -37,10 +38,10 @@ def get_authenticated_service():
 
     return credentials
 
-def load_shorts_titles():
+def load_titles():
     """Load titles from shorts_titles.json"""
     try:
-        with open('shorts_titles.json', 'r') as f:
+        with open(Path("output") / "shorts_titles.json", 'r') as f:
             return json.load(f)
     except FileNotFoundError:
         print("Error: shorts_titles.json not found!")
@@ -98,7 +99,7 @@ def main():
     config = ScheduleConfig(credentials=credentials)
     
     # Load titles from shorts_titles.json
-    shorts_titles = load_shorts_titles()
+    shorts_titles = load_titles()
     
     # Get the list of videos from the shorts directory
     shorts_dir = 'output/shorts'

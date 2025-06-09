@@ -13,8 +13,14 @@ if __name__ == "__main__":
     # Use the most recent video file
     video_path = str(video_files[-1])
     video_name = Path(video_path).stem.replace("_with_subs", "")
-    srt_path = f"subtitles/{video_name}.srt"
-    output_dir = "output/shorts"
+
+    # ✅ Corrected subtitle path
+    srt_path = str(Path("output/subtitles") / f"{video_name}.srt")
+    if not os.path.exists(srt_path):
+        raise FileNotFoundError(f"Subtitle file not found: {srt_path}")
+
+    # Output shorts directory
+    shorts_output_dir = "output/shorts"
 
     # Keywords to look for in subtitles
     keywords = [
@@ -28,11 +34,11 @@ if __name__ == "__main__":
         video_path=video_path,
         srt_path=srt_path,
         keywords=keywords,
-        output_dir=output_dir,
+        output_dir=shorts_output_dir,
         min_duration=15,
         max_duration=20
     )
 
     print(f"Created {len(clip_paths)} shorts:")
     for path in clip_paths:
-        print(f"- {path}") 
+        print(f"- {path}")

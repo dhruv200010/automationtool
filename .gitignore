@@ -40,6 +40,7 @@ token.pickle
 *.png
 *.jpeg
 config/api_keys.py
+config/config.env
 
 # Logs
 *.log 
