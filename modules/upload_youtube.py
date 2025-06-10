@@ -1,5 +1,6 @@
 import os
 import datetime
+import pytz
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -186,6 +187,41 @@ def upload_to_youtube(video_path, title, description, tags, thumbnail_path=None,
         if "quota" in str(e).lower():
             print("\nYou've exceeded your YouTube API quota.")
             print("Please wait 24 hours or create a new project.")
+        return None
+
+def upload_with_schedule(video_path, title, description, tags, thumbnail_path=None, schedule_config=None):
+    """
+    Upload a video to YouTube with automatic scheduling based on schedule config.
+    
+    Args:
+        video_path (str): Path to the video file
+        title (str): Video title
+        description (str): Video description
+        tags (list): List of tags
+        thumbnail_path (str, optional): Path to thumbnail image
+        schedule_config (ScheduleConfig, optional): Schedule configuration object
+    """
+    try:
+        # Get next available publish time if schedule config is provided
+        publish_time = None
+        if schedule_config:
+            current_time = datetime.datetime.now(pytz.UTC)
+            publish_time = schedule_config.get_next_publish_time(current_time)
+            if not publish_time:
+                print("Warning: Could not find available schedule slot. Using default scheduling.")
+                publish_time = current_time + datetime.timedelta(days=1)
+        
+        # Use the existing upload function with the calculated publish time
+        return upload_to_youtube(
+            video_path=video_path,
+            title=title,
+            description=description,
+            tags=tags,
+            thumbnail_path=thumbnail_path,
+            publish_time=publish_time
+        )
+    except Exception as e:
+        print(f"An error occurred during scheduled upload: {str(e)}")
         return None
 
 if __name__ == "__main__":

@@ -9,13 +9,17 @@ import pytz
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 import logging
+from typing import List, Optional
+from googleapiclient.http import MediaFileUpload
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
 
 # Add the project root to Python path
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from modules.upload_youtube import upload_to_youtube
+from modules.upload_youtube import upload_to_youtube, upload_with_schedule
 from modules.schedule_config import ScheduleConfig
 from config.youtube_config import YOUTUBE_API_SCOPES, TOKEN_FILE, CLIENT_SECRETS_FILE
 
@@ -25,32 +29,29 @@ logger = logging.getLogger(__name__)
 SCOPES = YOUTUBE_API_SCOPES
 
 def get_authenticated_service():
+    """Get authenticated YouTube service"""
     credentials = None
-    # The file token.pickle stores the user's access and refresh tokens
     if TOKEN_FILE.exists():
         with open(TOKEN_FILE, 'rb') as token:
             credentials = pickle.load(token)
-    # If there are no (valid) credentials available, let the user log in.
     if not credentials or not credentials.valid:
         if credentials and credentials.expired and credentials.refresh_token:
             credentials.refresh(Request())
         else:
             if not CLIENT_SECRETS_FILE.exists():
-                print(f"Error: {CLIENT_SECRETS_FILE} not found!")
-                print("Please follow these steps:")
-                print("1. Go to Google Cloud Console")
-                print("2. Create a project and enable YouTube Data API")
-                print("3. Configure OAuth consent screen")
-                print("4. Create OAuth 2.0 credentials")
-                print(f"5. Download and place in {CLIENT_SECRETS_FILE}")
+                logger.error(f"Error: {CLIENT_SECRETS_FILE} not found!")
+                logger.error("Please follow these steps:")
+                logger.error("1. Go to Google Cloud Console")
+                logger.error("2. Create a project and enable YouTube Data API")
+                logger.error("3. Configure OAuth consent screen")
+                logger.error("4. Create OAuth 2.0 credentials")
+                logger.error(f"5. Download and place in {CLIENT_SECRETS_FILE}")
                 sys.exit(1)
             flow = InstalledAppFlow.from_client_secrets_file(
                 str(CLIENT_SECRETS_FILE), SCOPES)
             credentials = flow.run_local_server(port=0)
-        # Save the credentials for the next run
         with open(TOKEN_FILE, 'wb') as token:
             pickle.dump(credentials, token)
-
     return credentials
 
 def datetime_to_iso(dt):
@@ -60,36 +61,89 @@ def datetime_to_iso(dt):
     return dt
 
 def load_titles():
-    """Load titles from shorts_titles.json"""
+    """Load titles and metadata from shorts_titles.json."""
     try:
-        # Load and normalize output folder from config
-        config_path = project_root / "config" / "master_config.json"
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-            output_root = Path(config['output_folder']).expanduser().resolve()
+        # Get output directory from master config
+        with open('config/master_config.json', 'r') as f:
+            master_config = json.load(f)
+            output_folder = Path(master_config.get('output_folder', 'output')).expanduser().resolve()
         
-        titles_path = output_root / "shorts_titles.json"
-        with open(titles_path, 'r') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        print("Error: shorts_titles.json not found!")
-        return {}
+        # Try to load from output directory
+        titles_file = output_folder / "shorts_titles.json"
+        if not titles_file.exists():
+            logger.warning(f"shorts_titles.json not found at {titles_file}")
+            return {}
+        
+        with open(titles_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            logger.info(f"Successfully loaded metadata for {len(data)} videos from {titles_file}")
+            
+            # Validate metadata structure and clean up quotes
+            valid_data = {}
+            for path, info in data.items():
+                if not isinstance(info, dict):
+                    logger.warning(f"Invalid metadata format for {path}, skipping")
+                    continue
+                    
+                # Clean up quotes from title and description
+                if 'title' in info:
+                    info['title'] = info['title'].strip('"')
+                if 'description' in info:
+                    info['description'] = info['description'].strip('"')
+                
+                # Clean up hashtags - ensure no duplicate # symbols
+                if 'hashtags' in info:
+                    info['hashtags'] = [tag.strip('#') for tag in info['hashtags']]
+                
+                # Ensure all required fields exist
+                if not info.get('title'):
+                    logger.warning(f"No title found for {path}, using filename as title")
+                    info['title'] = Path(path).stem
+                
+                if not info.get('hashtags'):
+                    logger.warning(f"No hashtags found for {path}, using default hashtags")
+                    info['hashtags'] = ["shorts", "viral"]
+                
+                if not info.get('description'):
+                    logger.warning(f"No description found for {path}, using default description")
+                    info['description'] = f"Check out this amazing short video! {info['title']}"
+                
+                valid_data[path] = info
+            
+            # Log sample metadata for debugging
+            for path, info in list(valid_data.items())[:3]:
+                logger.info(f"Sample metadata for {path}:")
+                logger.info(f"  Title: {info.get('title', 'No title')}")
+                logger.info(f"  Hashtags: {info.get('hashtags', [])}")
+                logger.info(f"  Description: {info.get('description', 'No description')[:100]}...")
+            
+            return valid_data
     except json.JSONDecodeError:
-        print("Error: Invalid JSON in shorts_titles.json!")
+        logger.error(f"Error parsing {titles_file}. Using default titles.")
+        return {}
+    except Exception as e:
+        logger.error(f"Error loading titles: {str(e)}")
         return {}
 
-def normalize_path(path):
-    """Normalize path to use forward slashes and handle both Windows and Unix paths"""
-    # Convert to Path object first to handle any path format
-    path_obj = Path(path)
-    # If it's an absolute path, make it relative to project root
-    if path_obj.is_absolute():
-        try:
-            path_obj = path_obj.relative_to(project_root)
-        except ValueError:
-            pass  # If path is not under project root, keep it as is
-    # Convert to string with forward slashes
-    return str(path_obj).replace('\\', '/')
+def normalize_path(path: str) -> str:
+    """Normalize path to match the format in shorts_titles.json."""
+    # Convert to absolute path and normalize separators
+    abs_path = str(Path(path).resolve())
+    # Try both forward and backward slashes
+    normalized = abs_path.replace('\\', '/')
+    
+    # Try to get relative path from output directory
+    try:
+        with open('config/master_config.json', 'r') as f:
+            master_config = json.load(f)
+            output_folder = Path(master_config.get('output_folder', 'output')).expanduser().resolve()
+        
+        if normalized.startswith(str(output_folder)):
+            return normalized[len(str(output_folder)) + 1:]  # +1 for the slash
+    except Exception:
+        pass
+    
+    return normalized
 
 def get_schedule_for_videos_with_limit(config, video_files, max_videos_per_week=7):
     """Generate a schedule that respects the max_videos_per_week limit and minimum intervals"""
@@ -178,18 +232,79 @@ def update_upload_status(video_path: str, video_id: str):
     except Exception as e:
         logger.error(f"Error updating metadata file: {str(e)}")
 
+def upload_with_schedule(video_path: str, title: str, description: str, tags: List[str], schedule_config: ScheduleConfig, schedule_time: datetime) -> Optional[str]:
+    """Upload a video to YouTube with scheduling."""
+    try:
+        # Get credentials
+        credentials = get_authenticated_service()
+        if not credentials:
+            logger.error("Failed to get YouTube credentials")
+            return None
+            
+        # Create YouTube service
+        youtube = build('youtube', 'v3', credentials=credentials)
+        
+        # Prepare video metadata
+        body = {
+            'snippet': {
+                'title': title,
+                'description': description,
+                'tags': tags,
+                'categoryId': '22'  # People & Blogs category
+            },
+            'status': {
+                'privacyStatus': 'private',
+                'publishAt': schedule_time.isoformat(),
+                'selfDeclaredMadeForKids': False
+            }
+        }
+        
+        # Upload video
+        logger.info(f"Uploading video: {title}")
+        request = youtube.videos().insert(
+            part=','.join(body.keys()),
+            body=body,
+            media_body=MediaFileUpload(video_path, chunksize=-1, resumable=True)
+        )
+        
+        response = request.execute()
+        video_id = response.get('id')
+        
+        if video_id:
+            logger.info(f"Video uploaded successfully! Video ID: {video_id}")
+            logger.info(f"Scheduled for: {schedule_time.strftime('%Y-%m-%dT%H:%M:%SZ')}")
+            return video_id
+        else:
+            logger.error("Failed to get video ID from upload response")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error uploading video: {str(e)}")
+        return None
+
 def upload_shorts():
     """Upload all shorts in the output directory to YouTube."""
     try:
         logger.info("\n=== Starting YouTube Shorts Upload Process ===")
         
-        # Get output directory from config
+        # Get output directory and schedule config from master config
         with open('config/master_config.json', 'r') as f:
-            config = json.load(f)
-            output_folder = config.get('output_folder', 'output')
+            master_config = json.load(f)
+            output_folder = Path(master_config.get('output_folder', 'output')).expanduser().resolve()
+        
+        # Get credentials and initialize schedule config
+        credentials = get_authenticated_service()
+        if not credentials:
+            logger.error("Failed to get YouTube credentials. Please ensure you have set up the YouTube API credentials correctly.")
+            return
+            
+        schedule_config = ScheduleConfig(
+            config_file='config/master_config.json',
+            credentials=credentials
+        )
         
         # Get all shorts in the output directory
-        shorts_dir = Path(output_folder) / 'shorts'
+        shorts_dir = output_folder / 'shorts'
         if not shorts_dir.exists():
             logger.error(f"No shorts directory found at {shorts_dir}")
             return
@@ -200,116 +315,94 @@ def upload_shorts():
             logger.warning("No shorts found to upload")
             return
         
-        logger.info(f"\nFound {len(shorts)} shorts to upload:")
-        for short in shorts:
-            logger.info(f"- {short.name}")
+        # Load titles and metadata
+        titles_data = load_titles()
+        if not titles_data:
+            logger.warning("No metadata found. Will use default titles and descriptions.")
         
-        # Load schedule config
-        logger.info("\n=== Loading Schedule Configuration ===")
-        schedule_config = ScheduleConfig()
+        logger.info(f"\nFound {len(shorts)} shorts to upload")
         
-        # Get current time in UTC
-        current_time = datetime.now(pytz.UTC)
-        logger.info(f"Current time (UTC): {current_time.isoformat()}")
+        # Get schedule for all videos at once
+        schedules = schedule_config.get_schedule_for_videos(len(shorts))
+        if not schedules:
+            logger.error("Failed to generate schedule for videos")
+            return
         
         # Process each short
         successful_uploads = 0
         failed_uploads = 0
         
-        for i, short_path in enumerate(shorts, 1):
-            logger.info(f"\n=== Processing Short {i}/{len(shorts)}: {short_path.name} ===")
+        for short, schedule in zip(shorts, schedules):
             try:
-                # Get metadata from JSON file in the metadata directory
-                metadata_dir = Path(output_folder) / 'metadata'
-                # Remove _with_subs from the filename if present
-                base_name = short_path.stem.replace('_with_subs', '')
-                json_path = metadata_dir / (base_name + '.json')
-                logger.info(f"Looking for metadata at: {json_path}")
+                # Get metadata from shorts_titles.json
+                short_path = normalize_path(str(short))
+                short_info = titles_data.get(short_path, {})
+                if not short_info:
+                    # Try alternative path formats
+                    alt_paths = [
+                        f"shorts/{short.name}",
+                        str(short.relative_to(output_folder)),
+                        str(short.name)
+                    ]
+                    for alt_path in alt_paths:
+                        if alt_path in titles_data:
+                            short_info = titles_data[alt_path]
+                            break
                 
-                if not json_path.exists():
-                    logger.error(f"No metadata found for {short_path.name}")
-                    failed_uploads += 1
-                    continue
+                # Clean up quotes from title and description
+                if 'title' in short_info:
+                    short_info['title'] = short_info['title'].strip('"')
+                if 'description' in short_info:
+                    short_info['description'] = short_info['description'].strip('"')
                 
-                with open(json_path, 'r') as f:
-                    metadata = json.load(f)
+                # Clean up hashtags - ensure no duplicate # symbols
+                if 'hashtags' in short_info:
+                    short_info['hashtags'] = [tag.strip('#') for tag in short_info['hashtags']]
                 
-                # Get next available publish time
-                logger.info("Getting next available publish time...")
-                publish_time = schedule_config.get_next_publish_time(current_time)
-                if not publish_time:
-                    logger.error("No available publish times in schedule")
-                    failed_uploads += 1
-                    continue
+                # Get title, description, and tags with fallbacks
+                title = short_info.get('title', short.stem)
+                description = short_info.get('description', '')
+                tags = short_info.get('hashtags', [])
                 
-                logger.info(f"Scheduled publish time: {publish_time.isoformat()}")
+                # Validate metadata before upload
+                if not title:
+                    title = short.stem
+                if not tags:
+                    tags = ["shorts", "viral"]
+                if not description:
+                    description = f"Check out this amazing short video! {title}"
                 
-                # Upload the short
-                logger.info("\n=== Uploading to YouTube ===")
-                logger.info(f"Title: {metadata['title']}")
-                logger.info(f"Description: {metadata.get('description', '')[:100]}...")
-                logger.info(f"Tags: {', '.join(metadata.get('tags', []))}")
+                logger.info(f"\nUploading video: {title}")
                 
-                video_id = upload_to_youtube(
-                    video_path=str(short_path),
-                    title=metadata['title'],
-                    description=metadata.get('description', ''),
-                    tags=metadata.get('tags', []),
-                    thumbnail_path=str(short_path.with_suffix('.jpg')) if short_path.with_suffix('.jpg').exists() else None,
-                    publish_time=publish_time
+                # Upload with schedule
+                video_id = upload_with_schedule(
+                    video_path=str(short),
+                    title=title,
+                    description=description,
+                    tags=tags,
+                    schedule_config=schedule_config,
+                    schedule_time=schedule
                 )
                 
                 if video_id:
-                    logger.info(f"\n=== Upload Successful ===")
-                    logger.info(f"YouTube Video ID: {video_id}")
-                    
-                    # Update metadata with upload info
-                    metadata['uploaded'] = True
-                    metadata['video_id'] = video_id
-                    metadata['upload_date'] = current_time.isoformat()
-                    metadata['publish_time'] = publish_time.isoformat()
-                    
-                    # Save updated metadata
-                    with open(json_path, 'w') as f:
-                        json.dump(metadata, f, indent=2)
-                    
-                    # Update upload status in shorts_titles.json
-                    update_upload_status(str(short_path), video_id)
-                    
-                    logger.info(f"Successfully uploaded and scheduled {short_path.name}")
+                    logger.info(f"Video uploaded successfully! Video ID: {video_id}")
+                    logger.info(f"Scheduled for: {schedule.strftime('%Y-%m-%dT%H:%M:%SZ')}")
+                    update_upload_status(str(short), video_id)
                     successful_uploads += 1
                 else:
-                    logger.error(f"Failed to upload {short_path.name}")
+                    logger.error(f"Failed to upload {short.name}")
                     failed_uploads += 1
-                
+                    
             except Exception as e:
-                logger.error(f"Error processing {short_path.name}: {str(e)}")
+                logger.error(f"Error uploading {short.name}: {str(e)}")
                 failed_uploads += 1
-                continue
-        
-        # Print summary
-        logger.info("\n=== Upload Process Summary ===")
-        logger.info(f"Total shorts processed: {len(shorts)}")
+                
+        logger.info(f"\nUpload Summary:")
         logger.info(f"Successfully uploaded: {successful_uploads}")
         logger.info(f"Failed uploads: {failed_uploads}")
         
-        if successful_uploads > 0:
-            logger.info("\nSuccessfully uploaded shorts:")
-            for short in shorts:
-                if short.exists():
-                    logger.info(f"- {short.name}")
-        
-        if failed_uploads > 0:
-            logger.warning("\nFailed uploads:")
-            for short in shorts:
-                if not short.exists():
-                    logger.warning(f"- {short.name}")
-        
-        logger.info("\n=== Upload Process Completed ===")
-        
     except Exception as e:
-        logger.error(f"Error in upload process: {str(e)}")
-        raise
+        logger.error(f"An error occurred: {str(e)}")
 
 if __name__ == "__main__":
     upload_shorts() 

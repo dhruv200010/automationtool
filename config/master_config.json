@@ -1,10 +1,25 @@
 {
   "input_folder": "C:\\\\Users\\\\sendt\\\\Downloads\\\\inputtest",
-  "output_folder": "C:\\\\Users\\\\sendt\\\\Downloads\\\\outputtest",
+  "output_folder": "C:\\\\Users\\\\sendt\\\\Downloads\\\\outputtest\\\\suboutputfolder",
   "pipeline_steps": {
     "add_subtitles": true,
     "create_shorts": true,
     "generate_titles": true,
-    "upload_shorts": false
+    "upload_shorts": true
+  },
+  "schedule_config": {
+    "daily_schedule": {
+      "monday": "20:00",
+      "tuesday": "20:00",
+      "wednesday": "20:00",
+      "thursday": "20:00",
+      "friday": "20:00",
+      "saturday": "11:00",
+      "sunday": "11:00"
+    },
+    "videos_per_day": 1,
+    "min_interval_hours": 4,
+    "max_videos_per_week": 8,
+    "timezone": "Asia/Kolkata"
   }
 }

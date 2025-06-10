@@ -8,8 +8,19 @@ from google.oauth2.credentials import Credentials
 import sys
 import logging
 from pathlib import Path
+import pickle
 
+# Configure logging
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Create console handler if not already exists
+if not logger.handlers:
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
 
 def safe_encode(text: str) -> str:
     return text.encode(sys.stdout.encoding or 'utf-8', errors='ignore').decode()
@@ -21,31 +32,69 @@ def safe_log(logger_func, text):
         logger_func(safe_encode(text))
 
 class ScheduleConfig:
-    def __init__(self, config_file: str = 'config/schedule_config.json', credentials=None):
+    def __init__(self, config_file: str = 'config/master_config.json', credentials=None):
         self.config_file = config_file
-        self.credentials = credentials  # Store the credentials
-        # Default to India timezone
+        self.credentials = credentials
         self.timezone = pytz.timezone('Asia/Kolkata')
+        safe_log(logger.info, f"Initializing ScheduleConfig with timezone: {self.timezone.zone}")
+        
+        # If credentials are provided as a path, load them
+        if isinstance(credentials, (str, Path)):
+            try:
+                with open(credentials, 'rb') as token:
+                    self.credentials = pickle.load(token)
+                safe_log(logger.info, "Loaded credentials from file")
+            except Exception as e:
+                safe_log(logger.error, f"Failed to load credentials from file: {str(e)}")
+                self.credentials = None
+        
+        # Validate credentials if provided
+        if self.credentials:
+            try:
+                # Test the credentials by making a simple API call
+                youtube = build('youtube', 'v3', credentials=self.credentials)
+                youtube.channels().list(part='snippet', mine=True).execute()
+                safe_log(logger.info, "Successfully validated YouTube credentials")
+            except Exception as e:
+                safe_log(logger.error, f"Invalid YouTube credentials: {str(e)}")
+                self.credentials = None
+        else:
+            safe_log(logger.warning, "No YouTube credentials provided. Scheduling will be based on local configuration only.")
+        
         self.load_config()
 
     def load_config(self):
-        """Load configuration from JSON file or use defaults"""
+        """Load configuration from master_config.json or use defaults"""
         config_path = Path(__file__).parent.parent / self.config_file
+        safe_log(logger.info, f"Loading configuration from: {config_path}")
+        
         if config_path.exists():
             with open(config_path, 'r') as f:
-                config = json.load(f)
+                master_config = json.load(f)
+                config = master_config.get('schedule_config', {})
+                
                 self.daily_schedule = {
                     day: datetime.strptime(t, '%H:%M').time()
-                    for day, t in config['daily_schedule'].items()
+                    for day, t in config.get('daily_schedule', {}).items()
                 }
-                self.videos_per_day = config['videos_per_day']
-                self.min_interval_hours = config['min_interval_hours']
-                self.max_videos_per_week = config['max_videos_per_week']
-                # Load timezone if specified, otherwise use default
+                self.videos_per_day = config.get('videos_per_day', 1)
+                self.min_interval_hours = config.get('min_interval_hours', 4)
+                self.max_videos_per_week = config.get('max_videos_per_week', 7)
+                
                 if 'timezone' in config:
                     self.timezone = pytz.timezone(config['timezone'])
+                
+                safe_log(logger.info, "Loaded configuration:")
+                safe_log(logger.info, f"- Videos per day: {self.videos_per_day}")
+                safe_log(logger.info, f"- Min interval hours: {self.min_interval_hours}")
+                safe_log(logger.info, f"- Max videos per week: {self.max_videos_per_week}")
+                safe_log(logger.info, f"- Timezone: {self.timezone.zone}")
+                safe_log(logger.info, "Daily schedule:")
+                for day, time in self.daily_schedule.items():
+                    safe_log(logger.info, f"  {day}: {time.strftime('%H:%M')}")
         else:
-            # Default configuration with new schedule
+            safe_log(logger.warning, f"Config file not found at {config_path}, using defaults")
+            # Default configuration
             self.daily_schedule = {
                 'monday': time(20, 0),    # 8:00 PM IST
                 'tuesday': time(20, 0),   # 8:00 PM IST
@@ -61,8 +110,17 @@ class ScheduleConfig:
             self.save_config()
 
     def save_config(self):
-        """Save current configuration to JSON file"""
-        config = {
+        """Save current configuration to master_config.json"""
+        config_path = Path(__file__).parent.parent / self.config_file
+        
+        # Read existing master config if it exists
+        master_config = {}
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                master_config = json.load(f)
+        
+        # Update schedule_config section
+        master_config['schedule_config'] = {
             'daily_schedule': {
                 day: t.strftime('%H:%M')
                 for day, t in self.daily_schedule.items()
@@ -72,9 +130,10 @@ class ScheduleConfig:
             'max_videos_per_week': self.max_videos_per_week,
             'timezone': self.timezone.zone
         }
-        config_path = Path(__file__).parent.parent / self.config_file
+        
+        # Save updated master config
         with open(config_path, 'w') as f:
-            json.dump(config, f, indent=4)
+            json.dump(master_config, f, indent=4)
 
     def get_next_publish_time(self, current_time: datetime, day_offset: int = 0) -> datetime:
         """
@@ -140,39 +199,38 @@ class ScheduleConfig:
         if start_time is None:
             start_time = datetime.now(pytz.UTC)
         
+        safe_log(logger.info, f"\n=== Generating Schedule for {num_videos} Videos ===")
+        safe_log(logger.info, f"Starting from: {start_time.astimezone(self.timezone).strftime('%Y-%m-%d %H:%M:%S')} {self.timezone.zone}")
+        
         schedule = []
         current_time = start_time
         videos_scheduled = 0
         
-        # Fetch the list of already scheduled videos
         scheduled_videos = self.fetch_scheduled_videos()
-        safe_log(logger.info, f"Fetched {len(scheduled_videos)} scheduled videos.")
+        safe_log(logger.info, f"Found {len(scheduled_videos)} already scheduled videos")
         
         while videos_scheduled < num_videos:
-            # Get next available time slot
             next_time = self.get_next_publish_time(current_time)
-            
-            # Skip if the day already has a scheduled video
-            if any(scheduled_time.date() == next_time.date() for scheduled_time in scheduled_videos):
-                safe_log(logger.info, f"Skipping day {next_time.date()} as it already has a scheduled video.")
-                current_time = next_time + timedelta(days=1)
-                continue
-            
-            # Ensure minimum interval between uploads
-            if schedule:
-                min_interval = timedelta(hours=self.min_interval_hours)
-                time_since_last = next_time - schedule[-1]
+            if not next_time:
+                safe_log(logger.error, "Could not find next available time slot")
+                break
                 
-                if time_since_last < min_interval:
-                    # Calculate the next valid time that respects the minimum interval
-                    next_time = schedule[-1] + min_interval
-                    # If this pushes us to next day, get the next available time slot
-                    if next_time.date() != schedule[-1].date():
-                        next_time = self.get_next_publish_time(next_time)
+            local_time = next_time.astimezone(self.timezone)
+            safe_log(logger.info, f"\nScheduling video {videos_scheduled + 1}:")
+            safe_log(logger.info, f"Date: {local_time.strftime('%Y-%m-%d')}")
+            safe_log(logger.info, f"Time: {local_time.strftime('%H:%M:%S')} {self.timezone.zone}")
+            safe_log(logger.info, f"UTC: {next_time.strftime('%Y-%m-%d %H:%M:%S')} UTC")
             
             schedule.append(next_time)
-            current_time = next_time + timedelta(hours=self.min_interval_hours)  # Move past minimum interval
+            current_time = next_time + timedelta(hours=self.min_interval_hours)
             videos_scheduled += 1
+        
+        if schedule:
+            safe_log(logger.info, "\n=== Final Schedule ===")
+            safe_log(logger.info, "====================")
+            for i, time in enumerate(schedule, 1):
+                local_time = time.astimezone(self.timezone)
+                safe_log(logger.info, f"Video {i}: {local_time.strftime('%Y-%m-%d %H:%M:%S')} {self.timezone.zone}")
         
         return schedule
 
@@ -184,11 +242,11 @@ class ScheduleConfig:
             List of scheduled publish times in UTC
         """
         if not self.credentials:
-            safe_log(logger.info, "No credentials provided. Cannot fetch scheduled videos.")
+            safe_log(logger.warning, "No credentials provided. Cannot fetch scheduled videos.")
             return []
 
         try:
-            # Set up the YouTube API client
+            safe_log(logger.info, "Fetching scheduled videos from YouTube...")
             youtube = build('youtube', 'v3', credentials=self.credentials)
 
             # Step 1: Get your video IDs using search().list
@@ -204,16 +262,17 @@ class ScheduleConfig:
                 safe_log(logger.info, "No videos found in your channel.")
                 return []
 
+            safe_log(logger.info, f"Found {len(video_ids)} videos in channel")
+
             # Step 2: Fetch details for these video IDs using videos().list
             video_response = youtube.videos().list(
                 part="status,snippet",
                 id=",".join(video_ids)
             ).execute()
 
-            # Use a dictionary to store unique scheduled videos by video ID
             scheduled_videos_dict = {}
-            safe_log(logger.info, "\n=== Scheduled Videos ===")
-            safe_log(logger.info, "======================")
+            safe_log(logger.info, "\n=== Currently Scheduled Videos ===")
+            safe_log(logger.info, "=================================")
             
             for item in video_response.get("items", []):
                 video_id = item['id']
@@ -224,13 +283,15 @@ class ScheduleConfig:
                 if privacy_status == "private" and publish_at:
                     title = item['snippet']['title']
                     scheduled_time = datetime.fromisoformat(publish_at.replace('Z', '+00:00'))
-                    # Only add if we haven't seen this video ID before
+                    local_time = scheduled_time.astimezone(self.timezone)
+                    
                     if video_id not in scheduled_videos_dict:
                         scheduled_videos_dict[video_id] = (title, scheduled_time)
-                        safe_log(logger.info, f"{title}")
-                        safe_log(logger.info, f"   Video ID: {video_id}")
-                        safe_log(logger.info, f"   Scheduled for: {scheduled_time.strftime('%Y-%m-%d %H:%M:%S')} UTC")
-                        safe_log(logger.info, "----------------------")
+                        safe_log(logger.info, f"\nTitle: {title}")
+                        safe_log(logger.info, f"Video ID: {video_id}")
+                        safe_log(logger.info, f"Scheduled for: {local_time.strftime('%Y-%m-%d %H:%M:%S')} {self.timezone.zone}")
+                        safe_log(logger.info, f"UTC Time: {scheduled_time.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+                        safe_log(logger.info, "----------------------------------------")
 
             scheduled_videos = [time for _, time in scheduled_videos_dict.values()]
             
@@ -238,6 +299,10 @@ class ScheduleConfig:
                 safe_log(logger.info, "No scheduled videos found.")
             else:
                 safe_log(logger.info, f"\nTotal unique scheduled videos: {len(scheduled_videos)}")
+                safe_log(logger.info, "Scheduled dates:")
+                for video_time in sorted(scheduled_videos):
+                    local_time = video_time.astimezone(self.timezone)
+                    safe_log(logger.info, f"- {local_time.strftime('%Y-%m-%d %H:%M:%S')} {self.timezone.zone}")
             
             return scheduled_videos
 
