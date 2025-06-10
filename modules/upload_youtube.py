@@ -99,7 +99,7 @@ def upload_to_youtube(video_path, title, description, tags, thumbnail_path=None,
         description (str): Video description
         tags (list): List of tags
         thumbnail_path (str, optional): Path to thumbnail image
-        publish_time (str, optional): ISO format datetime for scheduling
+        publish_time (datetime or str, optional): Datetime object or ISO format string for scheduling
     """
     try:
         # Validate video file
@@ -125,8 +125,27 @@ def upload_to_youtube(video_path, title, description, tags, thumbnail_path=None,
             }
         }
         
-        # If publish time is provided, set it
+        # If publish time is provided, format it properly for YouTube API
         if publish_time:
+            # Convert to UTC if it's a datetime object
+            if isinstance(publish_time, datetime.datetime):
+                if publish_time.tzinfo is None:
+                    publish_time = publish_time.replace(tzinfo=datetime.UTC)
+                else:
+                    publish_time = publish_time.astimezone(datetime.UTC)
+                # Format as ISO 8601 with 'Z' suffix
+                publish_time = publish_time.strftime('%Y-%m-%dT%H:%M:%SZ')
+            # If it's already a string, ensure it ends with 'Z'
+            elif isinstance(publish_time, str) and not publish_time.endswith('Z'):
+                publish_time = publish_time + 'Z'
+            
+            # Ensure the time is in the future
+            now = datetime.datetime.now(datetime.UTC)
+            publish_dt = datetime.datetime.fromisoformat(publish_time.replace('Z', '+00:00'))
+            if publish_dt <= now:
+                print("Warning: Publish time is in the past. Using current time + 1 hour.")
+                publish_time = (now + datetime.timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
+            
             body['status']['publishAt'] = publish_time
         
         # Create the video upload request

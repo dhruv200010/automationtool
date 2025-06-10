@@ -1,25 +1,28 @@
 import os
 import sys
+import json
 import shutil
 from pathlib import Path
 import subprocess
+from modules.transcription import TranscriptionHandler
 
-# Add the parent directory to sys.path to import modules
+# Add the project root to Python path
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from modules.transcription import TranscriptionHandler
-
-def run_command(cmd, description):
+def run_command(command, step_name):
     """Run a command and print its output"""
-    print(f"\n{description}...")
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if result.returncode != 0:
-        print("Error Output:")
-        print(result.stderr)
-        raise Exception(f"Command failed: {' '.join(cmd)}")
-    return result
+    print(f"\n{step_name}...")
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        print(result.stdout)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error: {e}")
+        print(f"Command output: {e.stdout}")
+        print(f"Command error: {e.stderr}")
+        return False
 
 def create_karaoke_style():
     """Create the style section for karaoke subtitles"""
@@ -195,10 +198,15 @@ def main():
     video_path = Path(sys.argv[1])
     video_name = video_path.stem
 
-    output_dir = Path("output")
-    subtitles_dir = output_dir / "subtitles"
-    output_dir.mkdir(exist_ok=True)
-    subtitles_dir.mkdir(exist_ok=True)
+    # Load and normalize output folder from config
+    config_path = project_root / "config" / "master_config.json"
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config = json.load(f)
+        output_root = Path(config['output_folder']).expanduser().resolve()
+    
+    subtitles_dir = output_root / "subtitles"
+    output_root.mkdir(parents=True, exist_ok=True)
+    subtitles_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         # Step 1: Generate SRT
@@ -230,7 +238,7 @@ def main():
         print("ASS file modified successfully.")
         
         # Step 5: Burn subtitles
-        output_path = output_dir / f"{video_name}_with_subs.mp4"
+        output_path = output_root / f"{video_name}_with_subs.mp4"
         run_command([
             "ffmpeg",
             "-y",  # Overwrite output

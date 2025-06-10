@@ -1,5 +1,6 @@
 import whisper
 import os
+import json
 import subprocess
 import shutil
 from pathlib import Path
@@ -7,12 +8,19 @@ from pathlib import Path
 class TranscriptionHandler:
     def __init__(self):
         self.model = whisper.load_model("base")
-        self.output_dir = Path("output")
-        self.subtitles_dir = self.output_dir / "subtitles"
+        
+        # Load and normalize output folder from config
+        project_root = Path(__file__).parent.parent
+        config_path = project_root / "config" / "master_config.json"
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+            self.output_root = Path(config['output_folder']).expanduser().resolve()
+        
+        self.subtitles_dir = self.output_root / "subtitles"
         
         # Create directories if they don't exist
-        self.output_dir.mkdir(exist_ok=True)
-        self.subtitles_dir.mkdir(exist_ok=True)
+        self.output_root.mkdir(parents=True, exist_ok=True)
+        self.subtitles_dir.mkdir(parents=True, exist_ok=True)
     
     def transcribe_video(self, video_path):
         """Transcribe a video file and save subtitles."""
@@ -38,24 +46,14 @@ class TranscriptionHandler:
             mins = int((seconds % 3600) // 60)
             secs = int(seconds % 60)
             ms = int((seconds - int(seconds)) * 1000)
-            return f"{hrs:02}:{mins:02}:{secs:02},{ms:03}"
-
-        # Use utf-8 without BOM for better FFmpeg compatibility
+            return f"{hrs:02d}:{mins:02d}:{secs:02d},{ms:03d}"
+        
         with open(path, 'w', encoding='utf-8') as f:
-            for i, seg in enumerate(segments):
-                start = format_timestamp(seg['start'])
-                end = format_timestamp(seg['end'])
-                text = seg['text'].strip().title()
-                
-                # Split text into words and format into max 2 lines with 2 words each
-                words = text.split()
-                formatted_lines = []
-                for i in range(0, min(len(words), 4), 2):  # Process max 4 words (2 lines × 2 words)
-                    line = ' '.join(words[i:i+2])
-                    formatted_lines.append(line)
-                
-                formatted_text = '\n'.join(formatted_lines)
-                f.write(f"{i+1}\n{start} --> {end}\n{formatted_text}\n\n")
+            for i, segment in enumerate(segments, 1):
+                start = format_timestamp(segment['start'])
+                end = format_timestamp(segment['end'])
+                text = segment['text'].strip()
+                f.write(f"{i}\n{start} --> {end}\n{text}\n\n")
     
     def _convert_srt_to_ass(self, srt_path):
         """Convert SRT file to ASS format using FFmpeg."""

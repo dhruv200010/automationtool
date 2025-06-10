@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 import pysrt
 
-# Add the parent directory to sys.path to import modules
+# Add the project root to Python path
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
@@ -23,8 +23,15 @@ class ShortsTitleGenerator:
     def __init__(self):
         self.title_generator = TitleGenerator()
         self.titles: Dict[str, Tuple[str, List[str], str]] = {}  # Store video_path: (title, hashtags, description) mapping
-        self.metadata_dir = Path("output/metadata")
-        self.metadata_dir.mkdir(exist_ok=True)
+        
+        # Load and normalize output folder from config
+        config_path = project_root / "config" / "master_config.json"
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+            self.output_root = Path(config['output_folder']).expanduser().resolve()
+        
+        self.metadata_dir = self.output_root / "metadata"
+        self.metadata_dir.mkdir(parents=True, exist_ok=True)
 
     def safe_encode(self, text: str) -> str:
         """Safely encode text for logging"""
@@ -89,7 +96,7 @@ class ShortsTitleGenerator:
         logger.info(f"Current Working Directory: {os.getcwd()}")
         
         shorts_path = Path(shorts_dir)
-        subtitles_path = Path("output/subtitles")
+        subtitles_path = Path(subtitles_dir)
 
         # Filter only shorts matching the current video's name
         base_video_name = Path(video_path).stem.replace("_with_subs", "")
@@ -181,13 +188,13 @@ class ShortsTitleGenerator:
 
     def save_titles(self):
         """Save generated titles, hashtags, and descriptions to a JSON file"""
-        output_file = project_root / "output" / "shorts_titles.json"
+        output_file = self.output_root / "shorts_titles.json"
         # Convert the titles dictionary to a format that can be serialized to JSON
         serializable_titles = {}
         for k, v in self.titles.items():
             # Convert absolute path to relative path if it's within project root
             try:
-                rel_path = str(Path(k).relative_to(project_root)).replace('\\', '/')
+                rel_path = str(Path(k).relative_to(self.output_root)).replace('\\', '/')
             except ValueError:
                 # If path is not in project root, use it as is
                 rel_path = str(Path(k)).replace('\\', '/')
@@ -231,8 +238,7 @@ def main():
     generator = ShortsTitleGenerator()
     
     # Get all processed video files from the output directory
-    output_dir = Path("output")
-    video_files = list(output_dir.glob("*_with_subs.mp4"))
+    video_files = list(generator.output_root.glob("*_with_subs.mp4"))
     video_files.sort(key=os.path.getmtime)
     
     logger.info(f"Detected video files: {[str(f) for f in video_files]}")
@@ -244,8 +250,8 @@ def main():
     for video_path in video_files:
         logger.info(f"\nProcessing video: {video_path}")
         generator.process_all_shorts(
-            shorts_dir="output/shorts",
-            subtitles_dir="subtitles",
+            shorts_dir=str(generator.output_root / "shorts"),
+            subtitles_dir=str(generator.output_root / "subtitles"),
             video_path=str(video_path)
         )
 

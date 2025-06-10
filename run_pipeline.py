@@ -17,6 +17,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Get the project root directory
+PROJECT_ROOT = Path(__file__).parent.absolute()
+
 def get_all_videos(folder_path):
     """Get all video files from the specified folder"""
     folder = Path(folder_path)
@@ -71,13 +74,18 @@ def run_command(command, step_name):
     """Run a command and log its output"""
     logger.info(f"Starting: {step_name}")
     try:
+        # Set up environment with PYTHONPATH
+        env = os.environ.copy()
+        env['PYTHONPATH'] = str(PROJECT_ROOT)
+        
         # Run the command and capture output in real-time
         process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             universal_newlines=True,
-            shell=True
+            shell=True,
+            env=env
         )
         
         # Stream the output in real-time

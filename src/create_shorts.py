@@ -1,33 +1,34 @@
+import os
 import sys
+import json
 from pathlib import Path
+import logging
 
 # Add the project root to Python path
 project_root = Path(__file__).parent.parent
-sys.path.append(str(project_root))
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 from modules.subtitle_clipper import create_shorts_from_srt
-import logging
+from modules.transcription import TranscriptionHandler
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger(__name__)
 
-def get_project_root() -> Path:
-    """Get the project root directory"""
-    return Path(__file__).parent.parent
-
 def main():
-    # Get project root and set up paths
-    project_root = get_project_root()
-    output_dir = project_root / "output"
-    shorts_output_dir = output_dir / "shorts"
-    subtitles_dir = output_dir / "subtitles"
+    # Load and normalize output folder from config
+    config_path = project_root / "config" / "master_config.json"
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config = json.load(f)
+        output_root = Path(config['output_folder']).expanduser().resolve()
+    
+    # Set up paths
+    shorts_output_dir = output_root / "shorts"
+    subtitles_dir = output_root / "subtitles"
+    shorts_output_dir.mkdir(parents=True, exist_ok=True)
+    subtitles_dir.mkdir(parents=True, exist_ok=True)
 
     # Get the most recent video file from the output directory
-    video_files = list(output_dir.glob("*_with_subs.mp4"))
+    video_files = list(output_root.glob("*_with_subs.mp4"))
     if not video_files:
         raise FileNotFoundError("No processed video found in output directory")
     

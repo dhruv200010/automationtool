@@ -79,6 +79,7 @@ class ScheduleConfig:
     def get_next_publish_time(self, current_time: datetime, day_offset: int = 0) -> datetime:
         """
         Calculate the next publish time based on the schedule.
+        Strictly enforces one video per day and checks against already scheduled videos.
         
         Args:
             current_time: Current datetime
@@ -90,27 +91,40 @@ class ScheduleConfig:
         # Convert current time to local timezone
         local_time = current_time.astimezone(self.timezone)
         
-        for offset in range(day_offset, day_offset + 8):  # Check up to 7 days ahead
+        # Fetch already scheduled videos
+        scheduled_videos = self.fetch_scheduled_videos()
+        safe_log(logger.info, f"Found {len(scheduled_videos)} already scheduled videos")
+        
+        # Get the dates of already scheduled videos
+        scheduled_dates = {video.astimezone(self.timezone).date() for video in scheduled_videos}
+        
+        # Try each day starting from the offset
+        for offset in range(day_offset, day_offset + 14):  # Check up to 2 weeks ahead
             target_day = (local_time.weekday() + offset) % 7
             day_name = ['monday', 'tuesday', 'wednesday', 'thursday', 
                        'friday', 'saturday', 'sunday'][target_day]
             scheduled_time = self.daily_schedule[day_name]
+            
             # Calculate the date for the target day
             target_date = local_time.date() + timedelta(days=offset)
+            
+            # Skip if this day already has a scheduled video
+            if target_date in scheduled_dates:
+                safe_log(logger.info, f"Skipping {target_date} as it already has a scheduled video")
+                continue
+            
+            # Create the target datetime
             target_datetime = datetime.combine(target_date, scheduled_time)
             target_datetime = self.timezone.localize(target_datetime)
+            
+            # Only return if the time is in the future
             if target_datetime > local_time:
+                safe_log(logger.info, f"Next available slot: {target_datetime.strftime('%Y-%m-%d %H:%M:%S')} {self.timezone.zone}")
                 return target_datetime.astimezone(pytz.UTC)
-        # Fallback: return the next week's first scheduled time
-        # (should never hit this unless all times are in the past)
-        target_day = (local_time.weekday() + day_offset) % 7
-        day_name = ['monday', 'tuesday', 'wednesday', 'thursday', 
-                   'friday', 'saturday', 'sunday'][target_day]
-        scheduled_time = self.daily_schedule[day_name]
-        target_date = local_time.date() + timedelta(days=day_offset + 7)
-        target_datetime = datetime.combine(target_date, scheduled_time)
-        target_datetime = self.timezone.localize(target_datetime)
-        return target_datetime.astimezone(pytz.UTC)
+        
+        # If we get here, we couldn't find a slot in the next two weeks
+        safe_log(logger.error, "Could not find an available slot in the next two weeks")
+        return None
 
     def get_schedule_for_videos(self, num_videos: int, start_time: Optional[datetime] = None) -> List[datetime]:
         """
