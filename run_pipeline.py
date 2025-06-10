@@ -20,6 +20,28 @@ logger = logging.getLogger(__name__)
 # Get the project root directory
 PROJECT_ROOT = Path(__file__).parent.absolute()
 
+def get_pipeline_config():
+    """Get pipeline configuration from master_config.json"""
+    config_path = PROJECT_ROOT / "config" / "master_config.json"
+    if not config_path.exists():
+        logger.error("Error: master_config.json not found in config directory!")
+        sys.exit(1)
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+            pipeline_steps = config.get('pipeline_steps', {})
+            if not pipeline_steps:
+                logger.error("Error: 'pipeline_steps' not found in master_config.json!")
+                sys.exit(1)
+            return config
+    except json.JSONDecodeError:
+        logger.error("Error: Invalid JSON in master_config.json!")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Error reading master_config.json: {str(e)}")
+        sys.exit(1)
+
 def normalize_paths_in_config():
     """Normalize paths in master_config.json to use double backslashes"""
     config_path = PROJECT_ROOT / "config" / "master_config.json"
@@ -77,28 +99,6 @@ def get_all_videos(folder_path: Path) -> list[Path]:
     logger.info(f"Found {len(video_files)} video files")
     return video_files
 
-def get_input_folder() -> Path:
-    """Get input folder path from config file"""
-    config_path = PROJECT_ROOT / "config" / "master_config.json"
-    if not config_path.exists():
-        logger.error("Error: master_config.json not found in config directory!")
-        sys.exit(1)
-    
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-            input_folder = config.get('input_folder')
-            if not input_folder:
-                logger.error("Error: 'input_folder' not found in master_config.json!")
-                sys.exit(1)
-            return Path(input_folder).expanduser().resolve()
-    except json.JSONDecodeError:
-        logger.error("Error: Invalid JSON in master_config.json!")
-        sys.exit(1)
-    except Exception as e:
-        logger.error(f"Error reading master_config.json: {str(e)}")
-        sys.exit(1)
-
 def run_command(command: str, step_name: str) -> bool:
     """Run a command and log its output"""
     logger.info(f"Starting: {step_name}")
@@ -138,32 +138,41 @@ def run_command(command: str, step_name: str) -> bool:
         logger.error(f"Error in {step_name}: {str(e)}")
         return False
 
-def process_video(video_file: Path) -> bool:
+def process_video(video_file: Path, config: dict) -> bool:
     """Process a single video through the pipeline"""
     logger.info(f"\nProcessing video: {video_file}")
     
-    # Define the steps
+    # Define the steps with their corresponding config keys
     steps = [
         {
             "name": "Step 1: Process video and add subtitles",
-            "command": f'python src/add_subtitles.py "{video_file}"'
+            "command": f'python src/add_subtitles.py "{video_file}"',
+            "config_key": "add_subtitles"
         },
         {
             "name": "Step 2: Create shorts from full video",
-            "command": 'python src/create_shorts.py'
+            "command": 'python src/create_shorts.py',
+            "config_key": "create_shorts"
         },
         {
             "name": "Step 3: Generate titles/tags/descriptions",
-            "command": 'python src/generate_titles.py'
+            "command": 'python src/generate_titles.py',
+            "config_key": "generate_titles"
         },
         {
             "name": "Step 4: Upload shorts and schedule",
-            "command": 'python src/upload_shorts.py'
+            "command": 'python src/upload_shorts.py',
+            "config_key": "upload_shorts"
         }
     ]
 
-    # Run each step
+    # Run each step if enabled in config
     for step in steps:
+        # Check if the step is enabled in config
+        if not config['pipeline_steps'].get(step['config_key'], False):
+            logger.info(f"Step {step['name']} is disabled in config. Stopping pipeline.")
+            return True  # Return True since this is an intentional stop
+            
         if not run_command(step["command"], step["name"]):
             logger.error(f"Pipeline failed at {step['name']} for video {video_file}")
             return False
@@ -175,8 +184,11 @@ def main():
     # Normalize paths in master_config.json first
     normalize_paths_in_config()
     
+    # Get configuration
+    config = get_pipeline_config()
+    
     # Get input folder from config and find all videos
-    input_folder = get_input_folder()
+    input_folder = Path(config['input_folder']).expanduser().resolve()
     video_files = get_all_videos(input_folder)
     
     # Track success and failure
@@ -186,7 +198,7 @@ def main():
     # Process each video
     for video_file in video_files:
         try:
-            if process_video(video_file):
+            if process_video(video_file, config):
                 successful_videos.append(video_file)
             else:
                 failed_videos.append(video_file)
