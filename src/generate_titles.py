@@ -95,9 +95,11 @@ class ShortsTitleGenerator:
         """Process all shorts videos and generate titles using the same timestamps as shorts creation"""
         logger.info(f"Current Working Directory: {Path.cwd()}")
         
+        # Get the video name from the input video path
+        video_name = video_path.stem.replace("_with_subs", "")
+        
         # Filter only shorts matching the current video's name
-        base_video_name = video_path.stem.replace("_with_subs", "")
-        video_files = sorted(shorts_dir.glob(f"{base_video_name}_with_subs_short_*.mp4"))
+        video_files = sorted(shorts_dir.glob(f"{video_name}_short_*.mp4"))
         logger.info(f"Found video files in {shorts_dir}: {[str(f) for f in video_files]}")
         
         if not video_files:
@@ -106,11 +108,6 @@ class ShortsTitleGenerator:
 
         logger.info(f"Found {len(video_files)} video files to process")
 
-        # Get the video name from the input video path
-        video_name = video_path.stem
-        if "_short_" in video_name:
-            video_name = video_name.rsplit("_short_", 1)[0]
-        video_name = video_name.replace("_with_subs", "")
         subtitle_file = subtitles_dir / f"{video_name}.srt"
         
         logger.info(f"Looking for subtitle file: {subtitle_file}")

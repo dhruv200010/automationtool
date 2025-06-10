@@ -48,14 +48,15 @@ def main():
         "amazing", "unbelievable", "holy", "damn"
     ]
 
-    # Create shorts
+    # Create shorts with unique names based on the video name
     clip_paths = create_shorts_from_srt(
         video_path=video_path,
         srt_path=srt_path,
         keywords=keywords,
         output_dir=shorts_output_dir,
         min_duration=15,
-        max_duration=20
+        max_duration=20,
+        output_prefix=f"{video_name}_short_"  # Add unique prefix for each video
     )
 
     logger.info(f"Created {len(clip_paths)} shorts:")

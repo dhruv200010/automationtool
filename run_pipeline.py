@@ -31,11 +31,15 @@ def normalize_paths_in_config():
         # First read the file content as a raw string
         with open(config_path, 'r', encoding='utf-8') as f:
             content = f.read()
-            # Replace single backslashes with double backslashes before JSON parsing
-            content = content.replace('\\', '\\\\')
-            config = json.loads(content)
+            
+        # Fix common JSON formatting issues
+        content = content.replace('""', '"')  # Remove double quotes
+        content = content.replace('\\', '\\\\')  # Convert single backslashes to double
         
-        # Convert paths to use double backslashes
+        # Parse the JSON
+        config = json.loads(content)
+        
+        # Ensure paths are properly formatted
         if 'input_folder' in config:
             config['input_folder'] = str(Path(config['input_folder']).resolve()).replace('\\', '\\\\')
         if 'output_folder' in config:

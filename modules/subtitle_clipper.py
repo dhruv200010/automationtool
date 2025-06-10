@@ -150,7 +150,8 @@ def create_shorts_from_srt(
     output_dir: Path,
     min_duration: int = 15,
     max_duration: int = 20,
-    padding: int = 2
+    padding: int = 2,
+    output_prefix: Optional[str] = None
 ) -> List[Path]:
     """
     Create short video clips based on subtitle content containing specific keywords.
@@ -163,6 +164,7 @@ def create_shorts_from_srt(
         min_duration: Minimum duration of clips in seconds
         max_duration: Maximum duration of clips in seconds
         padding: Number of seconds to add before and after the clip
+        output_prefix: Optional prefix for output filenames
         
     Returns:
         List of paths to the created video clips
@@ -182,10 +184,11 @@ def create_shorts_from_srt(
     # Create clips
     clip_paths = []
     video_name = video_path.stem
+    prefix = output_prefix or f"{video_name}_short_"
     
     for i, clip in enumerate(clips):
         # Generate output path
-        output_path = output_dir / f"{video_name}_short_{i+1}.mp4"
+        output_path = output_dir / f"{prefix}{i+1}.mp4"
         
         # Create the clip using FFmpeg
         try:
