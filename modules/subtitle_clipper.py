@@ -7,7 +7,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def parse_srt(srt_path: str) -> List[Dict[str, Any]]:
+def parse_srt(srt_path: Path) -> List[Dict[str, Any]]:
     """
     Parse an SRT file and return a list of subtitle segments with timing information.
     
@@ -17,7 +17,7 @@ def parse_srt(srt_path: str) -> List[Dict[str, Any]]:
     Returns:
         List of dictionaries containing subtitle information
     """
-    subs = pysrt.open(srt_path)
+    subs = pysrt.open(str(srt_path))
     segments = []
     
     for sub in subs:
@@ -32,7 +32,7 @@ def parse_srt(srt_path: str) -> List[Dict[str, Any]]:
     return segments
 
 def find_clips_from_srt(
-    srt_path: str,
+    srt_path: Path,
     keywords: List[str],
     min_duration: int = 15,
     max_duration: int = 20,
@@ -144,14 +144,14 @@ def find_clips_from_srt(
     return clips
 
 def create_shorts_from_srt(
-    video_path: str,
-    srt_path: str,
+    video_path: Path,
+    srt_path: Path,
     keywords: List[str],
-    output_dir: str,
+    output_dir: Path,
     min_duration: int = 15,
     max_duration: int = 20,
     padding: int = 2
-) -> List[str]:
+) -> List[Path]:
     """
     Create short video clips based on subtitle content containing specific keywords.
     
@@ -168,7 +168,7 @@ def create_shorts_from_srt(
         List of paths to the created video clips
     """
     # Create output directory if it doesn't exist
-    os.makedirs(output_dir, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
     
     # Find clips using the find_clips_from_srt function
     clips = find_clips_from_srt(
@@ -181,22 +181,22 @@ def create_shorts_from_srt(
     
     # Create clips
     clip_paths = []
-    video_name = Path(video_path).stem
+    video_name = video_path.stem
     
     for i, clip in enumerate(clips):
         # Generate output path
-        output_path = os.path.join(output_dir, f"{video_name}_short_{i+1}.mp4")
+        output_path = output_dir / f"{video_name}_short_{i+1}.mp4"
         
         # Create the clip using FFmpeg
         try:
             cmd = [
                 'ffmpeg', '-y',
-                '-i', video_path,
+                '-i', str(video_path),
                 '-ss', str(clip['start']),
                 '-to', str(clip['end']),
                 '-c:v', 'libx264',
                 '-c:a', 'aac',
-                output_path
+                str(output_path)
             ]
             
             subprocess.run(cmd, check=True, capture_output=True)

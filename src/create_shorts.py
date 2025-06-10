@@ -50,10 +50,10 @@ def main():
 
     # Create shorts
     clip_paths = create_shorts_from_srt(
-        video_path=str(video_path),
-        srt_path=str(srt_path),
+        video_path=video_path,
+        srt_path=srt_path,
         keywords=keywords,
-        output_dir=str(shorts_output_dir),
+        output_dir=shorts_output_dir,
         min_duration=15,
         max_duration=20
     )

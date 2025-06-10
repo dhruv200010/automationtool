@@ -20,10 +20,39 @@ logger = logging.getLogger(__name__)
 # Get the project root directory
 PROJECT_ROOT = Path(__file__).parent.absolute()
 
-def get_all_videos(folder_path):
+def normalize_paths_in_config():
+    """Normalize paths in master_config.json to use double backslashes"""
+    config_path = PROJECT_ROOT / "config" / "master_config.json"
+    if not config_path.exists():
+        logger.error("Error: master_config.json not found in config directory!")
+        sys.exit(1)
+    
+    try:
+        # First read the file content as a raw string
+        with open(config_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+            # Replace single backslashes with double backslashes before JSON parsing
+            content = content.replace('\\', '\\\\')
+            config = json.loads(content)
+        
+        # Convert paths to use double backslashes
+        if 'input_folder' in config:
+            config['input_folder'] = str(Path(config['input_folder']).resolve()).replace('\\', '\\\\')
+        if 'output_folder' in config:
+            config['output_folder'] = str(Path(config['output_folder']).resolve()).replace('\\', '\\\\')
+        
+        # Write back the normalized config
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        
+        logger.info("Normalized paths in master_config.json")
+    except Exception as e:
+        logger.error(f"Error normalizing paths in master_config.json: {str(e)}")
+        sys.exit(1)
+
+def get_all_videos(folder_path: Path) -> list[Path]:
     """Get all video files from the specified folder"""
-    folder = Path(folder_path)
-    if not folder.exists():
+    if not folder_path.exists():
         logger.error(f"Error: Input folder '{folder_path}' not found!")
         sys.exit(1)
     
@@ -33,36 +62,32 @@ def get_all_videos(folder_path):
     # Get all video files in the folder
     video_files = []
     for ext in video_extensions:
-        video_files.extend(folder.glob(f'*{ext}'))
+        video_files.extend(folder_path.glob(f'*{ext}'))
     
     if not video_files:
         logger.error(f"Error: No video files found in '{folder_path}'!")
         sys.exit(1)
     
     # Sort by modification time
-    video_files.sort(key=os.path.getmtime)
+    video_files.sort(key=lambda x: x.stat().st_mtime)
     logger.info(f"Found {len(video_files)} video files")
-    return [str(video) for video in video_files]
+    return video_files
 
-def get_input_folder():
+def get_input_folder() -> Path:
     """Get input folder path from config file"""
-    config_path = Path("config/master_config.json")
+    config_path = PROJECT_ROOT / "config" / "master_config.json"
     if not config_path.exists():
         logger.error("Error: master_config.json not found in config directory!")
         sys.exit(1)
     
     try:
-        # Read the file content as a raw string first
         with open(config_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-            # Convert Windows paths to forward slashes before JSON parsing
-            content = content.replace('\\', '/')
-            config = json.loads(content)
+            config = json.load(f)
             input_folder = config.get('input_folder')
             if not input_folder:
                 logger.error("Error: 'input_folder' not found in master_config.json!")
                 sys.exit(1)
-            return input_folder
+            return Path(input_folder).expanduser().resolve()
     except json.JSONDecodeError:
         logger.error("Error: Invalid JSON in master_config.json!")
         sys.exit(1)
@@ -70,7 +95,7 @@ def get_input_folder():
         logger.error(f"Error reading master_config.json: {str(e)}")
         sys.exit(1)
 
-def run_command(command, step_name):
+def run_command(command: str, step_name: str) -> bool:
     """Run a command and log its output"""
     logger.info(f"Starting: {step_name}")
     try:
@@ -109,7 +134,7 @@ def run_command(command, step_name):
         logger.error(f"Error in {step_name}: {str(e)}")
         return False
 
-def process_video(video_file):
+def process_video(video_file: Path) -> bool:
     """Process a single video through the pipeline"""
     logger.info(f"\nProcessing video: {video_file}")
     
@@ -143,6 +168,9 @@ def process_video(video_file):
     return True
 
 def main():
+    # Normalize paths in master_config.json first
+    normalize_paths_in_config()
+    
     # Get input folder from config and find all videos
     input_folder = get_input_folder()
     video_files = get_all_videos(input_folder)
