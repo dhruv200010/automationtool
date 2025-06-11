@@ -298,7 +298,8 @@ class ScheduleConfig:
         if scheduled_info:
             safe_log(logger.info, "Final Schedule:")
             for info in scheduled_info:
-                safe_log(logger.info, f"\"{info['title']}\" → {info['scheduled_time'].strftime('%Y-%m-%d %H:%M')} {self.timezone.zone}")
+                video_id = info.get('metadata', {}).get('youtube_id', 'Not uploaded yet')
+                safe_log(logger.info, f"\"{info['title']}\" → {info['scheduled_time'].strftime('%Y-%m-%d %H:%M')} {self.timezone.zone} [ID: {video_id}]")
         
         return scheduled_info
 

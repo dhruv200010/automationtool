@@ -292,6 +292,29 @@ def process_video(video_file: Path, config: dict) -> bool:
     logger.info(f"Successfully processed video: {video_file}")
     return True
 
+def display_final_metadata_summary(config: dict):
+    """Display final metadata summary from shorts_titles.json"""
+    try:
+        output_folder = Path(config['output_folder']).expanduser().resolve()
+        titles_file = output_folder / "shorts_titles.json"
+        
+        if titles_file.exists():
+            with open(titles_file, 'r', encoding='utf-8') as f:
+                titles_data = json.load(f)
+            
+            logger.info("\n📋  Final Metadata Summary:")
+            for path, info in titles_data.items():
+                if info.get('uploaded'):
+                    video_id = info.get('youtube_id', 'Unknown')
+                    title = info.get('title', 'No title')
+                    upload_date = info.get('upload_date', 'Unknown')
+                    logger.info(f"🎥  Video ID: {video_id}")
+                    logger.info(f"📝  Title: {title}")
+                    logger.info(f"📅  Upload Date: {upload_date}")
+                    logger.info("---")
+    except Exception as e:
+        logger.error(f"Error reading final metadata: {str(e)}")
+
 def main():
     # Normalize paths in master_config.json first
     normalize_paths_in_config()
@@ -333,6 +356,9 @@ def main():
         logger.info("\nFailed videos:")
         for video in failed_videos:
             logger.info(f"- {video}")
+    
+    # Display final metadata summary
+    display_final_metadata_summary(config)
     
     if failed_videos:
         sys.exit(1)  # Exit with error if any videos failed

@@ -127,23 +127,26 @@ def load_titles():
 
 def normalize_path(path: str) -> str:
     """Normalize path to match the format in shorts_titles.json."""
-    # Convert to absolute path and normalize separators
-    abs_path = str(Path(path).resolve())
-    # Try both forward and backward slashes
-    normalized = abs_path.replace('\\', '/')
-    
-    # Try to get relative path from output directory
     try:
+        # Load output folder from config
         with open('config/master_config.json', 'r') as f:
             master_config = json.load(f)
             output_folder = Path(master_config.get('output_folder', 'output')).expanduser().resolve()
         
-        if normalized.startswith(str(output_folder)):
-            return normalized[len(str(output_folder)) + 1:]  # +1 for the slash
-    except Exception:
-        pass
-    
-    return normalized
+        # Convert to absolute path
+        abs_path = Path(path).resolve()
+        
+        # Try to get relative path from output directory
+        try:
+            rel_path = str(abs_path.relative_to(output_folder))
+            return rel_path.replace('\\', '/')
+        except ValueError:
+            # If path is not in output directory, use the filename
+            return abs_path.name
+            
+    except Exception as e:
+        logger.error(f"Error normalizing path {path}: {str(e)}")
+        return str(Path(path).name)  # Fallback to just the filename
 
 def get_schedule_for_videos_with_limit(config, video_files, max_videos_per_week=7):
     """Generate a schedule that respects the max_videos_per_week limit and minimum intervals"""
@@ -404,6 +407,8 @@ def upload_shorts():
                     logger.info(f"Video uploaded successfully! Video ID: {video_id}")
                     logger.info(f"Scheduled for: {schedule_time.strftime('%Y-%m-%dT%H:%M:%SZ')}")
                     update_upload_status(video_path, video_id)
+                    # Update the schedule item with the video ID
+                    schedule_item['metadata']['youtube_id'] = video_id
                     successful_uploads += 1
                 else:
                     logger.error(f"Failed to upload {Path(video_path).name}")
@@ -413,9 +418,38 @@ def upload_shorts():
                 logger.error(f"Error uploading {Path(video_path).name}: {str(e)}")
                 failed_uploads += 1
                 
+        # After all uploads are complete, display final schedule with video IDs
+        logger.info("\n📅  Final Schedule:")
+        for schedule_item in schedules:
+            video_id = schedule_item['metadata'].get('youtube_id', 'Not uploaded yet')
+            logger.info(f"📤  \"{schedule_item['title']}\" → {schedule_item['scheduled_time'].strftime('%Y-%m-%d %H:%M')} {schedule_config.timezone.zone} [ID: {video_id}]")
+
         logger.info(f"\nUpload Summary:")
         logger.info(f"Successfully uploaded: {successful_uploads}")
         logger.info(f"Failed uploads: {failed_uploads}")
+        
+        # Load and display final metadata from shorts_titles.json
+        try:
+            titles_file = output_folder / "shorts_titles.json"
+            if titles_file.exists():
+                with open(titles_file, 'r', encoding='utf-8') as f:
+                    titles_data = json.load(f)
+                
+                logger.info("\n📋  Final Metadata Summary:")
+                for path, info in titles_data.items():
+                    if info.get('uploaded'):
+                        video_id = info.get('youtube_id', 'Unknown')
+                        title = info.get('title', 'No title')
+                        upload_date = info.get('upload_date', 'Unknown')
+                        logger.info(f"🎥  Video ID: {video_id}")
+                        logger.info(f"📝  Title: {title}")
+                        logger.info(f"📅  Upload Date: {upload_date}")
+                        logger.info("---")
+        except Exception as e:
+            logger.error(f"Error reading final metadata: {str(e)}")
+        
+        # Add completion message after metadata summary
+        logger.info("✅  Completed: Step 4: Upload shorts and schedule")
         
     except Exception as e:
         logger.error(f"An error occurred: {str(e)}")
