@@ -322,8 +322,56 @@ def upload_shorts():
         
         logger.info(f"\nFound {len(shorts)} shorts to upload")
         
+        # Prepare video metadata for scheduling
+        video_metadata = []
+        for short in shorts:
+            # Get metadata from shorts_titles.json
+            short_path = normalize_path(str(short))
+            short_info = titles_data.get(short_path, {})
+            if not short_info:
+                # Try alternative path formats
+                alt_paths = [
+                    f"shorts/{short.name}",
+                    str(short.relative_to(output_folder)),
+                    str(short.name)
+                ]
+                for alt_path in alt_paths:
+                    if alt_path in titles_data:
+                        short_info = titles_data[alt_path]
+                        break
+            
+            # Clean up quotes from title and description
+            if 'title' in short_info:
+                short_info['title'] = short_info['title'].strip('"')
+            if 'description' in short_info:
+                short_info['description'] = short_info['description'].strip('"')
+            
+            # Clean up hashtags - ensure no duplicate # symbols
+            if 'hashtags' in short_info:
+                short_info['hashtags'] = [tag.strip('#') for tag in short_info['hashtags']]
+            
+            # Get title, description, and tags with fallbacks
+            title = short_info.get('title', short.stem)
+            description = short_info.get('description', '')
+            tags = short_info.get('hashtags', [])
+            
+            # Validate metadata before upload
+            if not title:
+                title = short.stem
+            if not tags:
+                tags = ["shorts", "viral"]
+            if not description:
+                description = f"Check out this amazing short video! {title}"
+            
+            video_metadata.append({
+                'title': title,
+                'description': description,
+                'tags': tags,
+                'path': str(short)
+            })
+        
         # Get schedule for all videos at once
-        schedules = schedule_config.get_schedule_for_videos(len(shorts))
+        schedules = schedule_config.get_schedule_for_videos(len(shorts), video_metadata=video_metadata)
         if not schedules:
             logger.error("Failed to generate schedule for videos")
             return
@@ -332,69 +380,37 @@ def upload_shorts():
         successful_uploads = 0
         failed_uploads = 0
         
-        for short, schedule in zip(shorts, schedules):
+        for schedule_item in schedules:
             try:
-                # Get metadata from shorts_titles.json
-                short_path = normalize_path(str(short))
-                short_info = titles_data.get(short_path, {})
-                if not short_info:
-                    # Try alternative path formats
-                    alt_paths = [
-                        f"shorts/{short.name}",
-                        str(short.relative_to(output_folder)),
-                        str(short.name)
-                    ]
-                    for alt_path in alt_paths:
-                        if alt_path in titles_data:
-                            short_info = titles_data[alt_path]
-                            break
-                
-                # Clean up quotes from title and description
-                if 'title' in short_info:
-                    short_info['title'] = short_info['title'].strip('"')
-                if 'description' in short_info:
-                    short_info['description'] = short_info['description'].strip('"')
-                
-                # Clean up hashtags - ensure no duplicate # symbols
-                if 'hashtags' in short_info:
-                    short_info['hashtags'] = [tag.strip('#') for tag in short_info['hashtags']]
-                
-                # Get title, description, and tags with fallbacks
-                title = short_info.get('title', short.stem)
-                description = short_info.get('description', '')
-                tags = short_info.get('hashtags', [])
-                
-                # Validate metadata before upload
-                if not title:
-                    title = short.stem
-                if not tags:
-                    tags = ["shorts", "viral"]
-                if not description:
-                    description = f"Check out this amazing short video! {title}"
+                video_path = schedule_item['metadata']['path']
+                title = schedule_item['title']
+                description = schedule_item['metadata']['description']
+                tags = schedule_item['metadata']['tags']
+                schedule_time = schedule_item['scheduled_time']
                 
                 logger.info(f"\nUploading video: {title}")
                 
                 # Upload with schedule
                 video_id = upload_with_schedule(
-                    video_path=str(short),
+                    video_path=video_path,
                     title=title,
                     description=description,
                     tags=tags,
                     schedule_config=schedule_config,
-                    schedule_time=schedule
+                    schedule_time=schedule_time
                 )
                 
                 if video_id:
                     logger.info(f"Video uploaded successfully! Video ID: {video_id}")
-                    logger.info(f"Scheduled for: {schedule.strftime('%Y-%m-%dT%H:%M:%SZ')}")
-                    update_upload_status(str(short), video_id)
+                    logger.info(f"Scheduled for: {schedule_time.strftime('%Y-%m-%dT%H:%M:%SZ')}")
+                    update_upload_status(video_path, video_id)
                     successful_uploads += 1
                 else:
-                    logger.error(f"Failed to upload {short.name}")
+                    logger.error(f"Failed to upload {Path(video_path).name}")
                     failed_uploads += 1
                     
             except Exception as e:
-                logger.error(f"Error uploading {short.name}: {str(e)}")
+                logger.error(f"Error uploading {Path(video_path).name}: {str(e)}")
                 failed_uploads += 1
                 
         logger.info(f"\nUpload Summary:")
