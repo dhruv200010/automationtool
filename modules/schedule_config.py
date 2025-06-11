@@ -36,13 +36,6 @@ class ScheduleConfig:
         self.config_file = config_file
         self.credentials = credentials
         self.timezone = pytz.timezone('Asia/Kolkata')
-        self.daily_schedule = {}
-        self.videos_per_day = 1
-        self.min_interval_hours = 4
-        self.max_videos_per_week = 7
-        self._scheduled_videos_cache = None
-        self._last_fetch_time = None
-        self._cache_duration = timedelta(minutes=5)  # Cache for 5 minutes
         safe_log(logger.info, f"Initializing ScheduleConfig with timezone: {self.timezone.zone}")
         
         # If credentials are provided as a path, load them
@@ -241,25 +234,13 @@ class ScheduleConfig:
         
         return schedule
 
-    def fetch_scheduled_videos(self, verbose=True) -> List[datetime]:
+    def fetch_scheduled_videos(self) -> List[datetime]:
         """
         Fetch the list of already scheduled videos from YouTube.
         
-        Args:
-            verbose (bool): Whether to show detailed logging of scheduled videos
-            
         Returns:
             List of scheduled publish times in UTC
         """
-        # Check if we have a valid cache
-        now = datetime.now(pytz.UTC)
-        if (self._scheduled_videos_cache is not None and 
-            self._last_fetch_time is not None and 
-            now - self._last_fetch_time < self._cache_duration):
-            if verbose:
-                safe_log(logger.info, f"Using cached scheduled videos (last fetched {self._last_fetch_time.strftime('%Y-%m-%d %H:%M:%S')} UTC)")
-            return self._scheduled_videos_cache
-
         if not self.credentials:
             safe_log(logger.warning, "No credentials provided. Cannot fetch scheduled videos.")
             return []
@@ -290,9 +271,8 @@ class ScheduleConfig:
             ).execute()
 
             scheduled_videos_dict = {}
-            if verbose:
-                safe_log(logger.info, "\n=== Currently Scheduled Videos ===")
-                safe_log(logger.info, "=================================")
+            safe_log(logger.info, "\n=== Currently Scheduled Videos ===")
+            safe_log(logger.info, "=================================")
             
             for item in video_response.get("items", []):
                 video_id = item['id']
@@ -307,30 +287,22 @@ class ScheduleConfig:
                     
                     if video_id not in scheduled_videos_dict:
                         scheduled_videos_dict[video_id] = (title, scheduled_time)
-                        if verbose:
-                            safe_log(logger.info, f"\nTitle: {title}")
-                            safe_log(logger.info, f"Video ID: {video_id}")
-                            safe_log(logger.info, f"Scheduled for: {local_time.strftime('%Y-%m-%d %H:%M:%S')} {self.timezone.zone}")
-                            safe_log(logger.info, f"UTC Time: {scheduled_time.strftime('%Y-%m-%d %H:%M:%S')} UTC")
-                            safe_log(logger.info, "----------------------------------------")
+                        safe_log(logger.info, f"\nTitle: {title}")
+                        safe_log(logger.info, f"Video ID: {video_id}")
+                        safe_log(logger.info, f"Scheduled for: {local_time.strftime('%Y-%m-%d %H:%M:%S')} {self.timezone.zone}")
+                        safe_log(logger.info, f"UTC Time: {scheduled_time.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+                        safe_log(logger.info, "----------------------------------------")
 
             scheduled_videos = [time for _, time in scheduled_videos_dict.values()]
             
             if not scheduled_videos:
                 safe_log(logger.info, "No scheduled videos found.")
             else:
-                if verbose:
-                    safe_log(logger.info, f"\nTotal unique scheduled videos: {len(scheduled_videos)}")
-                    safe_log(logger.info, "Scheduled dates:")
-                    for video_time in sorted(scheduled_videos):
-                        local_time = video_time.astimezone(self.timezone)
-                        safe_log(logger.info, f"- {local_time.strftime('%Y-%m-%d %H:%M:%S')} {self.timezone.zone}")
-                else:
-                    safe_log(logger.info, f"Found {len(scheduled_videos)} scheduled videos")
-            
-            # Update cache
-            self._scheduled_videos_cache = scheduled_videos
-            self._last_fetch_time = now
+                safe_log(logger.info, f"\nTotal unique scheduled videos: {len(scheduled_videos)}")
+                safe_log(logger.info, "Scheduled dates:")
+                for video_time in sorted(scheduled_videos):
+                    local_time = video_time.astimezone(self.timezone)
+                    safe_log(logger.info, f"- {local_time.strftime('%Y-%m-%d %H:%M:%S')} {self.timezone.zone}")
             
             return scheduled_videos
 
@@ -453,9 +425,4 @@ class ScheduleConfig:
         if count < 1:
             raise ValueError("Maximum videos per week must be at least 1")
         self.max_videos_per_week = count
-        self.save_config()
-
-    def clear_scheduled_videos_cache(self):
-        """Clear the scheduled videos cache to force a fresh fetch"""
-        self._scheduled_videos_cache = None
-        self._last_fetch_time = None 
+        self.save_config() 
