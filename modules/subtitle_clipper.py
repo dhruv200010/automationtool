@@ -190,6 +190,9 @@ def create_shorts_from_srt(
         # Generate output path
         output_path = output_dir / f"{prefix}{i+1}.mp4"
         
+        # Log clip number before processing
+        logger.info(f"Processing clip {i+1}/{len(clips)}: {output_path}")
+        
         # Create the clip using FFmpeg
         try:
             cmd = [
@@ -209,5 +212,10 @@ def create_shorts_from_srt(
         except subprocess.CalledProcessError as e:
             logger.error(f"Error creating clip {i+1}: {e.stderr.decode()}")
             continue
+    
+    # Log total number of shorts created
+    logger.info(f"Successfully created {len(clip_paths)} shorts from video: {video_name}")
+    # Add a special completion message that will be caught by the formatter
+    logger.info(f"Completed: Step 2: Create shorts from full video (created {len(clip_paths)} shorts)")
     
     return clip_paths 

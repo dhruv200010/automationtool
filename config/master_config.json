@@ -1,6 +1,6 @@
 {
   "input_folder": "C:\\\\Users\\\\sendt\\\\Downloads\\\\inputtest",
-  "output_folder": "C:\\\\Users\\\\sendt\\\\Downloads\\\\outputtest\\\\suboutputfolder",
+  "output_folder": "C:\\\\Users\\\\sendt\\\\Downloads\\\\outputtest",
   "pipeline_steps": {
     "add_subtitles": true,
     "create_shorts": true,

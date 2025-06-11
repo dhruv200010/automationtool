@@ -5,6 +5,113 @@ import logging
 import json
 from datetime import datetime
 from pathlib import Path
+import re
+
+# Set up logging with UTF-8 encoding and emojis
+class EmojiFormatter(logging.Formatter):
+    # ANSI color codes
+    COLORS = {
+        'blue': '\033[94m',    # Step 1
+        'green': '\033[92m',   # Step 2
+        'yellow': '\033[93m',  # Step 3
+        'red': '\033[91m',     # Step 4
+        'cyan': '\033[96m',    # Processing new video
+        'reset': '\033[0m'     # Reset color
+    }
+
+    def format(self, record):
+        # Skip adding emojis for separator lines
+        if "⏳" in record.msg or "♻️" in record.msg or "⭐" in record.msg:
+            return super().format(record)
+            
+        # Add color to processing new video separator
+        elif "♻️" in record.msg and "Processing new video" in record.msg:
+            return f"{self.COLORS['cyan']}{super().format(record)}{self.COLORS['reset']}"
+            
+        # Add emojis based on log level and message content
+        if record.levelno >= logging.ERROR:
+            record.msg = f"❌  {record.msg}"
+        elif record.levelno >= logging.WARNING:
+            record.msg = f"⚠️  {record.msg}"
+        elif record.levelno >= logging.INFO:
+            # Add specific emojis for common operations
+            msg = record.msg.lower()
+            
+            # Check for completed status first
+            if "completed" in msg:
+                shorts_match = re.search(r'created (\d+) shorts', msg)
+                if shorts_match and "step 2" in msg:
+                    # Let it match even if emojis are there
+                    record.msg = f"{self.COLORS['green']}✂️  Completed: Step 2: Create shorts from full video (created {shorts_match.group(1)} shorts){self.COLORS['reset']}"
+                else:
+                    # Apply a default emoji only if not already present
+                    if not record.msg.startswith("✅"):
+                        record.msg = f"✅  {record.msg}"
+            # Pipeline steps with colors - only for main step messages
+            elif "step 1:" in msg and "process video and add subtitles" in msg:
+                record.msg = f"{self.COLORS['blue']}🎬  {record.msg}{self.COLORS['reset']}"  # Video processing
+            elif "step 2:" in msg and "create shorts from full video" in msg:
+                record.msg = f"{self.COLORS['green']}✂️  {record.msg}{self.COLORS['reset']}"  # Creating shorts
+            elif "step 3:" in msg and "generate titles/tags/descriptions" in msg:
+                record.msg = f"{self.COLORS['yellow']}📝  {record.msg}{self.COLORS['reset']}"  # Generating titles
+            elif "step 4:" in msg and "upload shorts and schedule" in msg:
+                record.msg = f"{self.COLORS['red']}📤  {record.msg}{self.COLORS['reset']}"  # Uploading
+            # API and Content Generation
+            elif "generating title" in msg:
+                record.msg = f"🎯  {record.msg}"  # Targeting content
+            elif "sending request" in msg:
+                record.msg = f"🌐  {record.msg}"  # API request
+            elif "api response" in msg:
+                record.msg = f"📡  {record.msg}"  # API response
+            elif "hashtags" in msg:
+                record.msg = f"🏷️  {record.msg}"  # Tags
+            elif "description" in msg:
+                record.msg = f"📄  {record.msg}"  # Description
+            elif "extracted" in msg:
+                record.msg = f"🔖  {record.msg}"  # Extracted content
+            # Other operations
+            elif "starting" in msg:
+                record.msg = f"🚀  {record.msg}"
+            elif "processing" in msg:
+                record.msg = f"⚙️  {record.msg}"
+            elif "found" in msg:
+                record.msg = f"🔍  {record.msg}"
+            elif "saved" in msg:
+                record.msg = f"💾  {record.msg}"
+            elif "upload" in msg:
+                record.msg = f"📤  {record.msg}"
+            elif "schedule" in msg:
+                record.msg = f"📅  {record.msg}"
+            elif "error" in msg:
+                record.msg = f"❌  {record.msg}"
+            elif "warning" in msg:
+                record.msg = f"⚠️  {record.msg}"
+            elif "successfully" in msg:
+                record.msg = f"✅  {record.msg}"  # Success messages
+            elif "burning" in msg:
+                record.msg = f"🔥  {record.msg}"  # Burning subtitles
+            elif "temporary" in msg or "cleaned" in msg:
+                record.msg = f"🗑️  {record.msg}"  # Cleanup operations
+            elif "clip" in msg:
+                # Extract clip number and total if present
+                clip_match = re.search(r'Processing clip (\d+)/(\d+)', msg)
+                if clip_match:
+                    clip_num = clip_match.group(1)
+                    total_clips = clip_match.group(2)
+                    record.msg = f"📋  Clip {clip_num}/{total_clips}  {record.msg}"  # Clip processing
+                else:
+                    record.msg = f"📋  {record.msg}"  # General clip message
+            # Regular step messages without colors
+            elif "step" in msg:
+                if "step 1" in msg:
+                    record.msg = f"🎬  {record.msg}"  # Video processing
+                elif "step 2" in msg:
+                    record.msg = f"✂️  {record.msg}"  # Creating shorts
+                elif "step 3" in msg:
+                    record.msg = f"📝  {record.msg}"  # Generating titles
+                elif "step 4" in msg:
+                    record.msg = f"📤  {record.msg}"  # Uploading
+        return super().format(record)
 
 # Set up logging with UTF-8 encoding
 logging.basicConfig(
@@ -15,6 +122,11 @@ logging.basicConfig(
         logging.FileHandler('pipeline.log', encoding='utf-8')
     ]
 )
+
+# Apply the emoji formatter to the root logger
+for handler in logging.getLogger().handlers:
+    handler.setFormatter(EmojiFormatter('%(asctime)s - %(levelname)s - %(message)s'))
+
 logger = logging.getLogger(__name__)
 
 # Get the project root directory
@@ -140,7 +252,7 @@ def run_command(command: str, step_name: str) -> bool:
 
 def process_video(video_file: Path, config: dict) -> bool:
     """Process a single video through the pipeline"""
-    logger.info(f"\nProcessing video: {video_file}")
+    logger.info(f"Processing video: {video_file}")
     
     # Define the steps with their corresponding config keys
     steps = [
@@ -170,7 +282,7 @@ def process_video(video_file: Path, config: dict) -> bool:
     for step in steps:
         # Check if the step is enabled in config
         if not config['pipeline_steps'].get(step['config_key'], False):
-            logger.info(f"Step {step['name']} is disabled in config. Stopping pipeline.")
+            logger.info(f"{step['name']} is disabled in config. Stopping pipeline.")
             return True  # Return True since this is an intentional stop
             
         if not run_command(step["command"], step["name"]):
@@ -197,6 +309,11 @@ def main():
     
     # Process each video
     for video_file in video_files:
+        # Add visual separator for new video
+        logger.info("♻️ ♻️ ♻️  Processing new video  ♻️ ♻️ ♻️")
+        logger.info(f"🎥  {video_file}")
+        logger.info("⏳ ⏳ ⏳  Starting processing  ⏳ ⏳ ⏳")
+        
         try:
             if process_video(video_file, config):
                 successful_videos.append(video_file)
@@ -207,10 +324,10 @@ def main():
             failed_videos.append(video_file)
     
     # Print summary
-    logger.info("\nPipeline Processing Summary:")
-    logger.info(f"Total videos processed: {len(video_files)}")
-    logger.info(f"Successfully processed: {len(successful_videos)}")
-    logger.info(f"Failed to process: {len(failed_videos)}")
+    logger.info("⏳ ⏳ ⏳  Pipeline Summary  ⏳ ⏳ ⏳")
+    logger.info(f"📊  Total videos processed: {len(video_files)}")
+    logger.info(f"✅  Successfully processed: {len(successful_videos)}")
+    logger.info(f"❌  Failed to process: {len(failed_videos)}")
     
     if failed_videos:
         logger.info("\nFailed videos:")
@@ -220,7 +337,7 @@ def main():
     if failed_videos:
         sys.exit(1)  # Exit with error if any videos failed
     else:
-        logger.info("\nAll videos processed successfully!")
+        logger.info("⭐  All videos processed successfully!")
 
 if __name__ == "__main__":
     main()

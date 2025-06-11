@@ -254,10 +254,6 @@ def main():
 
         print(f"\nProcessing complete! Output video saved to: {output_path}")
         
-        # Print FFmpeg version for debugging
-        print("\nFFmpeg version:")
-        run_command(["ffmpeg", "-version"], "Getting FFmpeg version")
-        
     except Exception as e:
         print(f"\nError: {str(e)}")
         sys.exit(1)
