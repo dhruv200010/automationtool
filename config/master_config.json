@@ -4,8 +4,8 @@
   "pipeline_steps": {
     "add_subtitles": true,
     "create_shorts": true,
-    "generate_titles": true,
-    "upload_shorts": true
+    "generate_titles": false,
+    "upload_shorts": false
   },
   "schedule_config": {
     "daily_schedule": {

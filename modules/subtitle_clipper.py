@@ -127,18 +127,24 @@ def find_clips_from_srt(
         if clips[0]['start'] > 0:
             start_clip = {
                 'start': 0,
-                'end': min(clips[0]['start'], max_duration),
+                'end': min(clips[0]['start'], min_duration),  # Ensure at least min_duration
                 'text': "Video Introduction"
             }
+            # If the start clip is too short, extend it to min_duration
+            if start_clip['end'] < min_duration:
+                start_clip['end'] = min_duration
             clips.insert(0, start_clip)
         
         # Add end portion if last clip doesn't end at total duration
         if clips[-1]['end'] < total_duration:
             end_clip = {
-                'start': max(clips[-1]['end'], total_duration - max_duration),
+                'start': max(clips[-1]['end'], total_duration - min_duration),  # Ensure at least min_duration
                 'end': total_duration,
                 'text': "Video Conclusion"
             }
+            # If the end clip is too short, adjust its start time to ensure min_duration
+            if end_clip['end'] - end_clip['start'] < min_duration:
+                end_clip['start'] = end_clip['end'] - min_duration
             clips.append(end_clip)
     
     return clips
