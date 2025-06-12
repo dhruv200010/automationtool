@@ -73,7 +73,8 @@ class EmojiFormatter(logging.Formatter):
             elif "starting" in msg:
                 record.msg = f"🚀  {record.msg}"
             elif "processing" in msg:
-                record.msg = f"⚙️  {record.msg}"
+                # Remove gear icon for processing messages
+                record.msg = f"{record.msg}"
             elif "found" in msg:
                 record.msg = f"🔍  {record.msg}"
             elif "saved" in msg:

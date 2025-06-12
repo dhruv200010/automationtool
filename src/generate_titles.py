@@ -67,15 +67,15 @@ class ShortsTitleGenerator:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
         logger.info(f"Saved metadata to {metadata_file}")
 
-    def generate_title_for_video(self, video_path: Path, subtitle_path: Path, start_time: float, end_time: float) -> Tuple[str, List[str], str]:
+    def generate_title_for_video(self, video_path: Path, subtitle_path: Path, start_time: float, end_time: float, clip_number: int = 0, total_clips: int = 0) -> Tuple[str, List[str], str]:
         """Generate title, hashtags, and description for a single video using its corresponding subtitle content"""
-        logger.info(f"\nProcessing video: {video_path.name}")
-        logger.info(f"Time range: {start_time:.2f}s - {end_time:.2f}s")
+        clip_info = f"\n{'='*50}\n📋 Processing Clip {clip_number}/{total_clips} - {video_path.name}\n{'='*50}" if total_clips > 0 else ""
+        print(clip_info)
         
         # Get subtitle content for the specific time range
         subtitle_content = self.get_subtitle_content_for_timestamps(subtitle_path, start_time, end_time)
         if not subtitle_content:
-            logger.error(f"No subtitle content found for {video_path} between {start_time}s and {end_time}s")
+            print(f"Error: No subtitle content found for {video_path} between {start_time}s and {end_time}s")
             return "", [], ""
 
         # Generate title, hashtags, and description using the subtitle content
@@ -83,38 +83,39 @@ class ShortsTitleGenerator:
         if result:
             title, hashtags, description = result
             safe_title = self.safe_encode(title)
-            logger.info(f"Generated title: {safe_title}")
-            logger.info(f"Generated hashtags: {' '.join(hashtags)}")
-            logger.info(f"Generated description: {description}")
+            print(f"Generated title: {safe_title}")
+            print(f"Generated hashtags: {' '.join(hashtags)}")
+            print(f"Generated description: {description}")
             return title, hashtags, description
         else:
-            logger.error(f"Failed to generate title for {video_path}")
+            print(f"Error: Failed to generate title for {video_path}")
             return "", [], ""
 
     def process_all_shorts(self, shorts_dir: Path, subtitles_dir: Path, video_path: Path):
         """Process all shorts videos and generate titles using the same timestamps as shorts creation"""
-        logger.info(f"Current Working Directory: {Path.cwd()}")
+        print(f"Current Working Directory: {Path.cwd()}")
         
         # Get the video name from the input video path
         video_name = video_path.stem.replace("_with_subs", "")
         
         # Filter only shorts matching the current video's name
         video_files = sorted(shorts_dir.glob(f"{video_name}_short_*.mp4"))
-        logger.info(f"Found video files in {shorts_dir}: {[str(f) for f in video_files]}")
+        print(f"Found video files in {shorts_dir}: {[str(f) for f in video_files]}")
         
         if not video_files:
-            logger.error(f"No video files found in {shorts_dir}")
+            print(f"Error: No video files found in {shorts_dir}")
             return
 
-        logger.info(f"Found {len(video_files)} video files to process")
+        total_clips = len(video_files)
+        print(f"Found {total_clips} video files to process")
 
         subtitle_file = subtitles_dir / f"{video_name}.srt"
         
-        logger.info(f"Looking for subtitle file: {subtitle_file}")
-        logger.info(f"Available subtitle files: {list(subtitles_dir.glob('*.srt'))}")
+        print(f"Looking for subtitle file: {subtitle_file}")
+        print(f"Available subtitle files: {list(subtitles_dir.glob('*.srt'))}")
         
         if not subtitle_file.exists():
-            logger.error(f"Subtitle file {subtitle_file} not found in {subtitles_dir}")
+            print(f"Error: Subtitle file {subtitle_file} not found in {subtitles_dir}")
             return
 
         # Get the same clip ranges used to create the shorts
@@ -124,18 +125,18 @@ class ShortsTitleGenerator:
             "amazing", "unbelievable", "holy", "damn"
         ]
         
-        logger.info(f"Finding clips from SRT file: {subtitle_file}")
+        print(f"Finding clips from SRT file: {subtitle_file}")
         clip_ranges = find_clips_from_srt(
             subtitle_file,
             keywords,
             min_duration=15,
             max_duration=20
         )
-        logger.info(f"Found {len(clip_ranges)} clip ranges")
+        print(f"Found {len(clip_ranges)} clip ranges")
 
         # If no clip ranges found, try to get content from the entire video
         if not clip_ranges:
-            logger.warning("No clip ranges found, attempting to get content from entire video")
+            print("Warning: No clip ranges found, attempting to get content from entire video")
             try:
                 subs = pysrt.open(str(subtitle_file))
                 if subs:
@@ -154,12 +155,10 @@ class ShortsTitleGenerator:
                                 self.save_metadata(video_file, title, hashtags, description, i, video_name)
                             return
             except Exception as e:
-                logger.error(f"Error processing entire video: {str(e)}")
+                print(f"Error processing entire video: {str(e)}")
 
         # Process each video with its corresponding timestamp
         for i, video_file in enumerate(video_files):
-            logger.info(f"Processing video {i+1}/{len(video_files)}: {video_file}")
-            
             # Get the clip range for this video
             if i < len(clip_ranges):
                 clip = clip_ranges[i]
@@ -168,14 +167,16 @@ class ShortsTitleGenerator:
                     video_file, 
                     subtitle_file, 
                     clip['start'], 
-                    clip['end']
+                    clip['end'],
+                    i + 1,  # Clip number (1-based)
+                    total_clips  # Total number of clips
                 )
                 if title:
                     self.titles[str(video_file)] = (title, hashtags, description)
                     # Save metadata for this short with unique filename
                     self.save_metadata(video_file, title, hashtags, description, i, video_name)
             else:
-                logger.warning(f"No clip range found for video {video_file}, skipping title generation")
+                print(f"Warning: No clip range found for video {video_file}, skipping title generation")
 
         # Save titles to JSON file
         self.save_titles()

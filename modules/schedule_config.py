@@ -197,6 +197,18 @@ class ScheduleConfig:
         scheduled_videos = self.fetch_scheduled_videos()
         safe_log(logger.info, f"Found {len(scheduled_videos)} already scheduled videos")
         
+        # Check if there's already a published video today
+        today = local_time.date()
+        has_published_today = any(
+            video.get('is_published', False) and 
+            video['scheduled_time'].astimezone(self.timezone).date() == today 
+            for video in scheduled_videos
+        )
+        
+        if has_published_today:
+            safe_log(logger.info, "Skipping today as there's already a published video")
+            day_offset = max(day_offset, 1)  # Start from tomorrow
+        
         # Get the dates of already scheduled videos
         scheduled_dates = {video['scheduled_time'].astimezone(self.timezone).date() for video in scheduled_videos}
         
@@ -291,15 +303,6 @@ class ScheduleConfig:
                 'scheduled_time': slot,
                 'metadata': video_info  # Include all metadata
             })
-            
-            safe_log(logger.info, f"Scheduling video {i+1} on {slot.strftime('%Y-%m-%d %H:%M')} {self.timezone.zone} - \"{video_title}\"")
-        
-        # Log final schedule
-        if scheduled_info:
-            safe_log(logger.info, "Final Schedule:")
-            for info in scheduled_info:
-                video_id = info.get('metadata', {}).get('youtube_id', 'Not uploaded yet')
-                safe_log(logger.info, f"\"{info['title']}\" → {info['scheduled_time'].strftime('%Y-%m-%d %H:%M')} {self.timezone.zone} [ID: {video_id}]")
         
         return scheduled_info
 
@@ -366,6 +369,8 @@ class ScheduleConfig:
             safe_log(logger.info, f"Retrieved details for {len(videos_response.get('items', []))} videos")
             
             scheduled_videos = []
+            today = datetime.now(self.timezone).date()
+            
             for video in videos_response.get('items', []):
                 # Debug logging for each video
                 debug_status = video['status'].get('privacyStatus')
@@ -373,22 +378,29 @@ class ScheduleConfig:
                 debug_upload_status = video['status'].get('uploadStatus')
                 safe_log(logger.debug, f"Checking video {video['id']} - privacy={debug_status}, publishAt={debug_publish_at}, uploadStatus={debug_upload_status}")
                 
-                # Check for publishAt
+                # Check for publishAt or publishedAt
+                video_time = None
                 if video['status'].get('publishAt'):
-                    try:
-                        scheduled_time = datetime.fromisoformat(video['status']['publishAt'].replace('Z', '+00:00'))
+                    video_time = datetime.fromisoformat(video['status']['publishAt'].replace('Z', '+00:00'))
+                elif video['snippet'].get('publishedAt'):
+                    video_time = datetime.fromisoformat(video['snippet']['publishedAt'].replace('Z', '+00:00'))
+                
+                if video_time:
+                    video_date = video_time.astimezone(self.timezone).date()
+                    # Include if it's scheduled for future or published today
+                    if video_date >= today:
+                        is_published = video_date == today and debug_status == 'public'
                         scheduled_videos.append({
                             'video_id': video['id'],
                             'title': video['snippet']['title'],
-                            'scheduled_time': scheduled_time,
+                            'scheduled_time': video_time,
                             'privacy_status': debug_status,
-                            'upload_status': debug_upload_status
+                            'upload_status': debug_upload_status,
+                            'is_published': is_published
                         })
-                        safe_log(logger.debug, f"Added scheduled video: {video['id']} - {video['snippet']['title']} at {scheduled_time}")
-                    except Exception as e:
-                        safe_log(logger.error, f"Error parsing scheduled time for video {video['id']}: {str(e)}")
+                        safe_log(logger.debug, f"Added video: {video['id']} - {video['snippet']['title']} at {video_time} (Published: {is_published})")
                 else:
-                    safe_log(logger.debug, f"Skipping video {video['id']} - no publishAt time")
+                    safe_log(logger.debug, f"Skipping video {video['id']} - no publish time")
             
             # Sort by scheduled time
             scheduled_videos.sort(key=lambda x: x['scheduled_time'])
@@ -402,7 +414,8 @@ class ScheduleConfig:
                 safe_log(logger.info, "Currently Scheduled Videos:")
                 for video in scheduled_videos:
                     local_time = video['scheduled_time'].astimezone(self.timezone)
-                    safe_log(logger.info, f"{local_time.strftime('%b %d, %H:%M')} - \"{video['title']}\" ({video['privacy_status']}, {video['upload_status']})")
+                    status = "Published" if video.get('is_published', False) else video['privacy_status']
+                    safe_log(logger.info, f"{local_time.strftime('%b %d, %H:%M')} - \"{video['title']}\" ({status}, {video['upload_status']})")
             else:
                 safe_log(logger.info, "No scheduled videos found")
             

@@ -59,9 +59,19 @@ def main():
         output_prefix=f"{video_name}_short_"  # Add unique prefix for each video
     )
 
-    logger.info(f"Created {len(clip_paths)} shorts:")
-    for path in clip_paths:
-        logger.info(f"- {path}")
+    # Print detailed information about generated shorts
+    summary = f"\n📊 Shorts Generation Summary:\nTotal shorts generated: {len(clip_paths)}"
+    logger.info(summary)
+    print(summary)
+
+    shorts_list = "\n📁 Generated Shorts:"
+    logger.info(shorts_list)
+    print(shorts_list)
+    
+    for i, path in enumerate(clip_paths, 1):
+        short_info = f"{i}. {path.name}"
+        logger.info(short_info)
+        print(short_info)
 
 if __name__ == "__main__":
     main()
