@@ -5,7 +5,7 @@
     "add_subtitles": true,
     "trim_silence": true,
     "create_shorts": true,
-    "generate_titles": false,
+    "generate_titles": true,
     "upload_shorts": false
   },
   "schedule_config": {

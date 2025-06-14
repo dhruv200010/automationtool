@@ -36,7 +36,10 @@ class TranscriptionHandler:
                 'punctuate': True,
                 'model': 'nova-2',
                 'language': 'en',
-                'smart_format': True
+                'smart_format': True,
+                'utterances': True,  # Enable utterance detection
+                'sentiment': True,   # Enable sentiment analysis
+                'summarize': True    # Enable summarization
             }
             
             response = await self.dg_client.transcription.prerecorded(source, options)
@@ -53,58 +56,69 @@ class TranscriptionHandler:
         # Run async transcription
         response = asyncio.run(self._transcribe_with_deepgram(str(video_path)))
         
-        # Convert Deepgram response to our segment format
+        # Convert Deepgram response to our segment format with scoring
         segments = []
-        for word in response['results']['channels'][0]['alternatives'][0]['words']:
-            segment = {
-                'start': word['start'],
-                'end': word['end'],
-                'text': word['punctuated_word'] if 'punctuated_word' in word else word['word']
-            }
-            segments.append(segment)
         
-        # Group words into sentences for better subtitle formatting
-        formatted_segments = self._group_words_into_sentences(segments)
+        # Check if we have utterances or need to use words
+        if 'utterances' in response['results']['channels'][0]['alternatives'][0]:
+            # Use utterance-level data
+            for utterance in response['results']['channels'][0]['alternatives'][0]['utterances']:
+                segment = {
+                    'start': utterance['start'],
+                    'end': utterance['end'],
+                    'text': utterance['transcript'],
+                    'sentiment': utterance.get('sentiment', {}),
+                    'confidence': utterance.get('confidence', 0),
+                    'words': utterance.get('words', [])
+                }
+                segments.append(segment)
+        else:
+            # Use word-level data and group into sentences
+            words = response['results']['channels'][0]['alternatives'][0]['words']
+            current_segment = None
+            
+            for word in words:
+                if current_segment is None:
+                    current_segment = {
+                        'start': word['start'],
+                        'end': word['end'],
+                        'text': word['punctuated_word'] if 'punctuated_word' in word else word['word'],
+                        'sentiment': {},
+                        'confidence': word.get('confidence', 0),
+                        'words': [word]
+                    }
+                else:
+                    # Check if we should start a new segment (e.g., on punctuation or long pause)
+                    if (word.get('punctuated_word', '').endswith(('.', '!', '?')) or 
+                        word['start'] - current_segment['end'] > 1.0):  # 1 second pause
+                        segments.append(current_segment)
+                        current_segment = {
+                            'start': word['start'],
+                            'end': word['end'],
+                            'text': word['punctuated_word'] if 'punctuated_word' in word else word['word'],
+                            'sentiment': {},
+                            'confidence': word.get('confidence', 0),
+                            'words': [word]
+                        }
+                    else:
+                        # Add word to current segment
+                        current_segment['end'] = word['end']
+                        current_segment['text'] += ' ' + (word['punctuated_word'] if 'punctuated_word' in word else word['word'])
+                        current_segment['words'].append(word)
+                        current_segment['confidence'] = (current_segment['confidence'] + word.get('confidence', 0)) / 2
+            
+            # Add the last segment if it exists
+            if current_segment:
+                segments.append(current_segment)
         
-        # Save subtitles
-        self._save_srt(formatted_segments, srt_path)
+        # Save subtitles with scoring information
+        self._save_srt_with_scoring(segments, srt_path)
         print(f"Subtitles saved to: {srt_path}")
         
         return srt_path
     
-    def _group_words_into_sentences(self, segments, max_duration=5.0):
-        """Group words into sentences for better subtitle formatting."""
-        formatted_segments = []
-        current_segment = {
-            'start': segments[0]['start'],
-            'end': segments[0]['end'],
-            'text': segments[0]['text']
-        }
-        
-        for i in range(1, len(segments)):
-            current_word = segments[i]
-            
-            # If adding this word would make the segment too long, start a new segment
-            if current_word['end'] - current_segment['start'] > max_duration:
-                formatted_segments.append(current_segment)
-                current_segment = {
-                    'start': current_word['start'],
-                    'end': current_word['end'],
-                    'text': current_word['text']
-                }
-            else:
-                # Add word to current segment
-                current_segment['end'] = current_word['end']
-                current_segment['text'] += ' ' + current_word['text']
-        
-        # Add the last segment
-        if current_segment:
-            formatted_segments.append(current_segment)
-        
-        return formatted_segments
-    
-    def _save_srt(self, segments, path):
-        """Save transcription segments as SRT file."""
+    def _save_srt_with_scoring(self, segments, path):
+        """Save transcription segments as SRT file with scoring information."""
         def format_timestamp(seconds):
             hrs = int(seconds // 3600)
             mins = int((seconds % 3600) // 60)
@@ -117,7 +131,53 @@ class TranscriptionHandler:
                 start = format_timestamp(segment['start'])
                 end = format_timestamp(segment['end'])
                 text = segment['text'].strip()
-                f.write(f"{i}\n{start} --> {end}\n{text}\n\n")
+                
+                # Add scoring information as a comment
+                sentiment = segment.get('sentiment', {})
+                confidence = segment.get('confidence', 0)
+                score = self._calculate_segment_score(segment)
+                
+                f.write(f"{i}\n{start} --> {end}\n{text}\n")
+                f.write(f"# Score: {score:.2f}, Confidence: {confidence:.2f}, Sentiment: {sentiment}\n\n")
+        
+        # Save scoring data to a separate JSON file
+        scoring_path = path.with_suffix('.json')
+        with open(scoring_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'segments': [{
+                    'start': s['start'],
+                    'end': s['end'],
+                    'text': s['text'],
+                    'score': self._calculate_segment_score(s),
+                    'sentiment': s.get('sentiment', {}),
+                    'confidence': s.get('confidence', 0)
+                } for s in segments]
+            }, f, indent=2)
+    
+    def _calculate_segment_score(self, segment):
+        """Calculate a score for a segment based on various factors."""
+        score = 0.0
+        
+        # Base score from confidence
+        confidence = segment.get('confidence', 0)
+        score += confidence * 0.4  # 40% weight to confidence
+        
+        # Sentiment analysis
+        sentiment = segment.get('sentiment', {})
+        if sentiment:
+            # Higher score for strong positive or negative sentiment
+            sentiment_score = abs(sentiment.get('sentiment', 0))
+            score += sentiment_score * 0.3  # 30% weight to sentiment
+        
+        # Length scoring (prefer segments between 15-30 seconds)
+        duration = segment['end'] - segment['start']
+        if 15 <= duration <= 30:
+            score += 0.3  # 30% weight to optimal duration
+        else:
+            # Penalize segments that are too short or too long
+            score += max(0, 0.3 - abs(duration - 22.5) * 0.02)  # 22.5 is the middle of 15-30 range
+        
+        return min(1.0, score)  # Normalize to 0-1 range
     
     def _convert_srt_to_ass(self, srt_path):
         """Convert SRT file to ASS format using FFmpeg."""

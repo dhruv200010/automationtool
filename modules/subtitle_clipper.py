@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import subprocess
 import pysrt
+import json
 from typing import List, Optional, Dict, Any
 import logging
 
@@ -35,32 +36,53 @@ def find_clips_from_srt(
     srt_path: Path,
     keywords: List[str],
     min_duration: int = 15,
-    max_duration: int = 20,
+    max_duration: int = 30,
     padding: int = 2
 ) -> List[Dict[str, Any]]:
     """
-    Find interesting clips from an SRT file based on keywords.
+    Find interesting clips from an SRT file based on scoring and keywords.
     
     Args:
         srt_path: Path to the SRT file
         keywords: List of keywords to look for
         min_duration: Minimum duration of clips in seconds
-        max_duration: Maximum duration of clips in seconds (can be extended by 4-5 seconds)
+        max_duration: Maximum duration of clips in seconds
         padding: Number of seconds to add before and after the clip
         
     Returns:
         List of dictionaries containing clip information
     """
-    segments = parse_srt(srt_path)
+    # Load scoring data
+    scoring_path = srt_path.with_suffix('.json')
+    if not scoring_path.exists():
+        raise FileNotFoundError(f"Scoring data not found: {scoring_path}")
+    
+    with open(scoring_path, 'r', encoding='utf-8') as f:
+        scoring_data = json.load(f)
+    
+    segments = scoring_data['segments']
     clips = []
-    current_clip = None
     max_overlap = 5  # Maximum overlap between clips in seconds
     max_extension = 5  # Maximum extension allowed beyond max_duration
     
     # Get total video duration from the last segment
     total_duration = segments[-1]['end'] if segments else 0
     
-    def ensure_min_duration(start_time: float, end_time: float, text: str) -> tuple:
+    def calculate_clip_score(clip_segments):
+        """Calculate a score for a potential clip based on its segments."""
+        if not clip_segments:
+            return 0
+        
+        # Average score of all segments
+        avg_score = sum(s['score'] for s in clip_segments) / len(clip_segments)
+        
+        # Bonus for keyword matches
+        keyword_matches = sum(1 for s in clip_segments if any(k.lower() in s['text'].lower() for k in keywords))
+        keyword_bonus = min(0.2, keyword_matches * 0.05)  # Up to 20% bonus for keywords
+        
+        return avg_score + keyword_bonus
+    
+    def ensure_min_duration(start_time: float, end_time: float, segments: List[Dict]) -> tuple:
         """Helper function to ensure a clip meets minimum duration"""
         duration = end_time - start_time
         if duration < min_duration:
@@ -74,71 +96,39 @@ def find_clips_from_srt(
                 end_time = min(total_duration, start_time + min_duration)
             elif end_time == total_duration:
                 start_time = max(0, end_time - min_duration)
-        return start_time, end_time, text
+        return start_time, end_time, segments
 
-    for i, segment in enumerate(segments):
-        text = segment['text'].lower()
-        if any(keyword.lower() in text for keyword in keywords):
-            if current_clip is None:
-                current_clip = {
-                    'start': segment['start'],
-                    'end': segment['end'],
-                    'text': text
-                }
-            else:
-                # Extend current clip if it's close to the previous one and within max overlap
-                if segment['start'] - current_clip['end'] < max_overlap:
-                    current_clip['end'] = segment['end']
-                    current_clip['text'] += f" {text}"
-                else:
-                    # Add padding and ensure duration limits
-                    start_time = max(0, current_clip['start'] - padding)
-                    end_time = current_clip['end'] + padding
-                    
-                    # Ensure minimum duration
-                    start_time, end_time, current_clip['text'] = ensure_min_duration(
-                        start_time, end_time, current_clip['text']
-                    )
-                    
-                    # Handle maximum duration
-                    duration = end_time - start_time
-                    if duration > max_duration + max_extension:
-                        trim_amount = (duration - (max_duration + max_extension)) / 2
-                        start_time += trim_amount
-                        end_time -= trim_amount
-                    
-                    clips.append({
-                        'start': start_time,
-                        'end': end_time,
-                        'text': current_clip['text']
-                    })
-                    
-                    current_clip = {
-                        'start': segment['start'],
-                        'end': segment['end'],
-                        'text': text
-                    }
+    # Create a sliding window to find potential clips
+    window_size = max_duration  # Maximum window size
+    step_size = min_duration // 2  # Half of minimum duration for overlap
     
-    # Handle the last clip if it exists
-    if current_clip:
-        start_time = max(0, current_clip['start'] - padding)
-        end_time = current_clip['end'] + padding
+    for start_idx in range(0, len(segments)):
+        current_segments = []
+        current_duration = 0
         
-        # If this is the last clip and it's too short, try to merge it with the previous clip
-        if clips:
-            last_clip = clips[-1]
-            combined_duration = end_time - last_clip['start']
+        # Build a clip starting from this segment
+        for i in range(start_idx, len(segments)):
+            segment = segments[i]
+            segment_duration = segment['end'] - segment['start']
             
-            # Try to merge if the combined duration is within limits
-            if combined_duration <= max_duration + max_extension:
-                # Merge with previous clip
-                last_clip['end'] = end_time
-                last_clip['text'] += f" {current_clip['text']}"
-            else:
-                # If we can't merge, ensure the current clip meets minimum duration
-                start_time, end_time, current_clip['text'] = ensure_min_duration(
-                    start_time, end_time, current_clip['text']
-                )
+            # If adding this segment would exceed max duration, stop
+            if current_duration + segment_duration > window_size:
+                break
+                
+            current_segments.append(segment)
+            current_duration += segment_duration
+        
+        # If we have enough segments, calculate score
+        if current_segments and current_duration >= min_duration:
+            score = calculate_clip_score(current_segments)
+            
+            # Lower the threshold to create more clips
+            if score > 0.3:  # Reduced from 0.5 to 0.3
+                start_time = max(0, current_segments[0]['start'] - padding)
+                end_time = current_segments[-1]['end'] + padding
+                
+                # Ensure minimum duration
+                start_time, end_time, _ = ensure_min_duration(start_time, end_time, current_segments)
                 
                 # Handle maximum duration
                 duration = end_time - start_time
@@ -147,69 +137,29 @@ def find_clips_from_srt(
                     start_time += trim_amount
                     end_time -= trim_amount
                 
-                clips.append({
-                    'start': start_time,
-                    'end': end_time,
-                    'text': current_clip['text']
-                })
-        else:
-            # If this is the only clip, ensure it meets minimum duration
-            start_time, end_time, current_clip['text'] = ensure_min_duration(
-                start_time, end_time, current_clip['text']
-            )
-            
-            # Handle maximum duration
-            duration = end_time - start_time
-            if duration > max_duration + max_extension:
-                trim_amount = (duration - (max_duration + max_extension)) / 2
-                start_time += trim_amount
-                end_time -= trim_amount
-            
-            clips.append({
-                'start': start_time,
-                'end': end_time,
-                'text': current_clip['text']
-            })
+                # Check if this clip overlaps too much with existing clips
+                is_overlapping = False
+                for existing_clip in clips:
+                    overlap = min(end_time, existing_clip['end']) - max(start_time, existing_clip['start'])
+                    if overlap > max_overlap:
+                        is_overlapping = True
+                        break
+                
+                if not is_overlapping:
+                    clips.append({
+                        'start': start_time,
+                        'end': end_time,
+                        'text': ' '.join(s['text'] for s in current_segments),
+                        'score': score
+                    })
     
-    # Add clips for the start and end portions if they don't exist
-    if clips:
-        # Add start portion if first clip doesn't start at 0
-        if clips[0]['start'] > 0:
-            start_time = 0
-            end_time = min(clips[0]['start'], max_duration + max_extension)
-            start_time, end_time, _ = ensure_min_duration(start_time, end_time, "Video Introduction")
-            start_clip = {
-                'start': start_time,
-                'end': end_time,
-                'text': "Video Introduction"
-            }
-            clips.insert(0, start_clip)
-        
-        # Add end portion if last clip doesn't end at total duration
-        if clips[-1]['end'] < total_duration:
-            start_time = max(clips[-1]['end'], total_duration - (max_duration + max_extension))
-            end_time = total_duration
-            start_time, end_time, _ = ensure_min_duration(start_time, end_time, "Video Conclusion")
-            end_clip = {
-                'start': start_time,
-                'end': end_time,
-                'text': "Video Conclusion"
-            }
-            clips.append(end_clip)
+    # Sort clips by score
+    clips.sort(key=lambda x: x['score'], reverse=True)
     
-    # Final verification to ensure no clips are shorter than minimum duration
-    for clip in clips:
-        duration = clip['end'] - clip['start']
-        if duration < min_duration:
-            # Extend the clip to meet minimum duration
-            needed_extension = min_duration - duration
-            clip['start'] = max(0, clip['start'] - needed_extension/2)
-            clip['end'] = min(total_duration, clip['end'] + needed_extension/2)
-            # If we hit the boundaries, extend more on the other side
-            if clip['start'] == 0:
-                clip['end'] = min(total_duration, clip['start'] + min_duration)
-            elif clip['end'] == total_duration:
-                clip['start'] = max(0, clip['end'] - min_duration)
+    # If we have too many clips, take the best ones
+    max_clips = 10  # Maximum number of clips to return
+    if len(clips) > max_clips:
+        clips = clips[:max_clips]
     
     return clips
 
@@ -219,7 +169,7 @@ def create_shorts_from_srt(
     keywords: List[str],
     output_dir: Path,
     min_duration: int = 15,
-    max_duration: int = 20,
+    max_duration: int = 30,
     padding: int = 2,
     output_prefix: Optional[str] = None
 ) -> List[Path]:
@@ -251,17 +201,23 @@ def create_shorts_from_srt(
         padding=padding
     )
     
+    if not clips:
+        logger.warning("No suitable clips found in the video")
+        return []
+    
+    # Get video name for output files
+    video_name = video_path.stem
+    prefix = output_prefix or video_name
+    
     # Create clips
     clip_paths = []
-    video_name = video_path.stem
-    prefix = output_prefix or f"{video_name}_short_"
-    
     for i, clip in enumerate(clips):
         # Generate output path
-        output_path = output_dir / f"{prefix}{i+1}.mp4"
+        output_path = output_dir / f"{prefix}_short_{i+1}.mp4"
         
         # Log clip number before processing
         logger.info(f"Processing clip {i+1}/{len(clips)}: {output_path}")
+        logger.info(f"Clip score: {clip['score']:.2f}")
         
         # Create the clip using FFmpeg
         try:
