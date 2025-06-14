@@ -21,17 +21,28 @@ logger = logging.getLogger(__name__)
 
 class ShortsTitleGenerator:
     def __init__(self):
-        self.title_generator = TitleGenerator()
-        self.titles: Dict[str, Tuple[str, List[str], str]] = {}  # Store video_path: (title, hashtags, description) mapping
+        """Initialize the title generator with paths"""
+        # Get the root directory (parent of src)
+        self.root_dir = Path(__file__).parent.parent
         
         # Load and normalize output folder from config
-        config_path = project_root / "config" / "master_config.json"
+        config_path = self.root_dir / "config" / "master_config.json"
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
             self.output_root = Path(config['output_folder']).expanduser().resolve()
         
+        # Initialize title generator
+        self.title_generator = TitleGenerator()
+        self.titles = {}
+        
+        # Load existing titles if available
+        self.titles_file = self.output_root / "titles.json"
+        if self.titles_file.exists():
+            with open(self.titles_file, 'r', encoding='utf-8') as f:
+                self.titles = json.load(f)
+        
         self.metadata_dir = self.output_root / "metadata"
-        self.metadata_dir.mkdir(parents=True, exist_ok=True)
+        self.metadata_dir.mkdir(exist_ok=True)
 
     def safe_encode(self, text: str) -> str:
         """Safely encode text for logging"""
@@ -52,6 +63,10 @@ class ShortsTitleGenerator:
 
     def save_metadata(self, video_path: Path, title: str, hashtags: List[str], description: str, index: int, video_name: str):
         """Save metadata for a single short"""
+        # Strip quotes from title and description
+        title = title.strip('"')
+        description = description.strip('"')
+        
         metadata = {
             "title": title,
             "hashtags": hashtags,
@@ -92,11 +107,12 @@ class ShortsTitleGenerator:
             return "", [], ""
 
     def process_all_shorts(self, shorts_dir: Path, subtitles_dir: Path, video_path: Path):
-        """Process all shorts videos and generate titles using the same timestamps as shorts creation"""
+        """Process all shorts videos and generate titles using the scoring data"""
         print(f"Current Working Directory: {Path.cwd()}")
         
         # Get the video name from the input video path
-        video_name = video_path.stem.replace("_with_subs", "")
+        video_name = video_path.stem.replace("_with_subs_trimmed", "")
+        print(f"Processing video: {video_name}")
         
         # Filter only shorts matching the current video's name
         video_files = sorted(shorts_dir.glob(f"{video_name}_short_*.mp4"))
@@ -109,74 +125,61 @@ class ShortsTitleGenerator:
         total_clips = len(video_files)
         print(f"Found {total_clips} video files to process")
 
-        subtitle_file = subtitles_dir / f"{video_name}.srt"
+        # Get the scoring data JSON file
+        scoring_file = subtitles_dir / f"{video_name}.json"
+        print(f"Looking for scoring data file: {scoring_file}")
         
-        print(f"Looking for subtitle file: {subtitle_file}")
-        print(f"Available subtitle files: {list(subtitles_dir.glob('*.srt'))}")
-        
-        if not subtitle_file.exists():
-            print(f"Error: Subtitle file {subtitle_file} not found in {subtitles_dir}")
+        if not scoring_file.exists():
+            print(f"Warning: Scoring data file {scoring_file} not found")
+            print("Checking for scoring data in output directory...")
+            # Try looking in the output directory
+            scoring_file = self.output_root / f"{video_name}.json"
+            if not scoring_file.exists():
+                print(f"Error: Scoring data file {scoring_file} not found")
+                return
+            print(f"Found scoring data file: {scoring_file}")
+
+        # Load scoring data
+        try:
+            with open(scoring_file, 'r', encoding='utf-8') as f:
+                scoring_data = json.load(f)
+        except Exception as e:
+            print(f"Error loading scoring data: {str(e)}")
             return
-
-        # Get the same clip ranges used to create the shorts
-        keywords = [
-            "funny", "lol", "crazy", "omg", "joke", "laugh",
-            "busted", "i'm dead", "what", "insane", "wow",
-            "amazing", "unbelievable", "holy", "damn"
-        ]
         
-        print(f"Finding clips from SRT file: {subtitle_file}")
-        clip_ranges = find_clips_from_srt(
-            subtitle_file,
-            keywords,
-            min_duration=15,
-            max_duration=20
-        )
-        print(f"Found {len(clip_ranges)} clip ranges")
-
-        # If no clip ranges found, try to get content from the entire video
-        if not clip_ranges:
-            print("Warning: No clip ranges found, attempting to get content from entire video")
-            try:
-                subs = pysrt.open(str(subtitle_file))
-                if subs:
-                    # Get content from first 20 seconds
-                    content = []
-                    for sub in subs:
-                        if sub.start.ordinal / 1000 <= 20:  # First 20 seconds
-                            content.append(sub.text)
-                    if content:
-                        subtitle_content = " ".join(content)
-                        # Generate title for the entire content
-                        title, hashtags, description = self.title_generator.generate_title_and_hashtags(subtitle_content)
-                        if title:
-                            for i, video_file in enumerate(video_files):
-                                self.titles[str(video_file)] = (title, hashtags, description)
-                                self.save_metadata(video_file, title, hashtags, description, i, video_name)
-                            return
-            except Exception as e:
-                print(f"Error processing entire video: {str(e)}")
-
+        # Get the segments with their timestamps
+        segments = scoring_data.get('segments', [])
+        if not segments:
+            print(f"Error: No segments found in scoring data")
+            return
+        
         # Process each video with its corresponding timestamp
         for i, video_file in enumerate(video_files):
-            # Get the clip range for this video
-            if i < len(clip_ranges):
-                clip = clip_ranges[i]
+            # Get the clip number from the filename
+            try:
+                clip_num = int(video_file.stem.split('_')[-1]) - 1  # Convert to 0-based index
+            except (ValueError, IndexError):
+                print(f"Warning: Could not determine clip number from {video_file}, skipping")
+                continue
+            
+            # Find the corresponding segment in the scoring data
+            if clip_num < len(segments):
+                segment = segments[clip_num]
                 # Generate title, hashtags, and description using the corresponding subtitle content
                 title, hashtags, description = self.generate_title_for_video(
                     video_file, 
-                    subtitle_file, 
-                    clip['start'], 
-                    clip['end'],
-                    i + 1,  # Clip number (1-based)
+                    subtitles_dir / f"{video_name}.srt", 
+                    segment['start'], 
+                    segment['end'],
+                    clip_num + 1,  # Clip number (1-based)
                     total_clips  # Total number of clips
                 )
                 if title:
                     self.titles[str(video_file)] = (title, hashtags, description)
                     # Save metadata for this short with unique filename
-                    self.save_metadata(video_file, title, hashtags, description, i, video_name)
+                    self.save_metadata(video_file, title, hashtags, description, clip_num, video_name)
             else:
-                print(f"Warning: No clip range found for video {video_file}, skipping title generation")
+                print(f"Warning: No scoring data found for clip {clip_num + 1}, skipping title generation")
 
         # Save titles to JSON file
         self.save_titles()
@@ -229,34 +232,60 @@ class ShortsTitleGenerator:
         logger.info(f"\nTitles, hashtags, and descriptions saved to {output_file}")
 
 def main():
-    # Initialize generator
-    generator = ShortsTitleGenerator()
-    
-    # Get all processed video files from the output directory
-    video_files = list(generator.output_root.glob("*_with_subs.mp4"))
-    video_files.sort(key=lambda x: x.stat().st_mtime)
-    
-    logger.info(f"Detected video files: {[str(f) for f in video_files]}")
-    
-    if not video_files:
-        raise FileNotFoundError("No processed video found in output directory")
-    
-    # Process each video
-    for video_path in video_files:
-        logger.info(f"\nProcessing video: {video_path}")
+    """Main function to generate titles for all shorts"""
+    try:
+        # Initialize the title generator
+        generator = ShortsTitleGenerator()
         
-        # Get the corresponding subtitle file
-        subtitle_path = video_path.parent / "subtitles" / f"{video_path.stem.replace('_with_subs', '')}.srt"
-        if not subtitle_path.exists():
-            logger.error(f"Subtitle file not found for {video_path}")
-            continue
-        
-        # Process all shorts for this video
-        generator.process_all_shorts(
-            generator.output_root / "shorts",
-            generator.output_root / "subtitles",
-            video_path
+        # Get processed video files from the processed directory
+        processed_dir = generator.output_root / "processed"
+        if not processed_dir.exists():
+            raise FileNotFoundError(f"Processed directory not found: {processed_dir}")
+            
+        # Get all processed videos sorted by modification time
+        video_files = sorted(
+            processed_dir.glob("*_with_subs_trimmed.mp4"),
+            key=lambda x: x.stat().st_mtime,
+            reverse=True
         )
+        
+        if not video_files:
+            print(f"Warning: No processed videos found in {processed_dir}")
+            print("Checking for videos in output directory...")
+            # Try looking in the output directory directly
+            video_files = sorted(
+                generator.output_root.glob("*_with_subs_trimmed.mp4"),
+                key=lambda x: x.stat().st_mtime,
+                reverse=True
+            )
+            if not video_files:
+                raise FileNotFoundError(f"No processed videos found in {generator.output_root}")
+            
+        print(f"Found {len(video_files)} processed videos")
+        for video in video_files:
+            print(f"Processing video: {video.name}")
+            
+            # Get the corresponding subtitle file
+            subtitles_dir = generator.output_root / "subtitles"
+            if not subtitles_dir.exists():
+                print(f"Warning: Subtitles directory not found: {subtitles_dir}")
+                print("Using output directory for subtitles...")
+                subtitles_dir = generator.output_root
+                
+            # Process all shorts for this video
+            shorts_dir = generator.output_root / "shorts"
+            if not shorts_dir.exists():
+                print(f"Warning: Shorts directory not found: {shorts_dir}")
+                print("Using output directory for shorts...")
+                shorts_dir = generator.output_root
+                
+            generator.process_all_shorts(shorts_dir, subtitles_dir, video)
+            
+        print("Title generation completed successfully!")
+        
+    except Exception as e:
+        print(f"Error in main function: {str(e)}")
+        raise
 
 if __name__ == "__main__":
     main() 
