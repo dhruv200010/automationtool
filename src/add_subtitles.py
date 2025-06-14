@@ -4,12 +4,28 @@ import json
 import shutil
 from pathlib import Path
 import subprocess
-from modules.transcription import TranscriptionHandler
 
 # Add the project root to Python path
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent.absolute()
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
+
+# Add src directory to Python path
+src_path = project_root / "src"
+if str(src_path) not in sys.path:
+    sys.path.insert(0, str(src_path))
+
+# Add modules directory to Python path
+modules_path = project_root / "modules"
+if str(modules_path) not in sys.path:
+    sys.path.insert(0, str(modules_path))
+
+# Debug print to verify paths
+print(f"Project root: {project_root}")
+print(f"Modules path: {modules_path}")
+print(f"Python path: {sys.path}")
+
+from modules.transcription import TranscriptionHandler
 
 def run_command(command, step_name):
     """Run a command and print its output"""

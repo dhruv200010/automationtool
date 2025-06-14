@@ -3,6 +3,7 @@
   "output_folder": "C:\\\\Users\\\\sendt\\\\Downloads\\\\New folder",
   "pipeline_steps": {
     "add_subtitles": true,
+    "trim_silence": true,
     "create_shorts": true,
     "generate_titles": false,
     "upload_shorts": false

@@ -263,6 +263,11 @@ def process_video(video_file: Path, config: dict) -> bool:
             "config_key": "add_subtitles"
         },
         {
+            "name": "Step 1.5: Trim silence from video",
+            "command": 'python src/trim_silence.py',
+            "config_key": "trim_silence"
+        },
+        {
             "name": "Step 2: Create shorts from full video",
             "command": 'python src/create_shorts.py',
             "config_key": "create_shorts"
