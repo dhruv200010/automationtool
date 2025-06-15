@@ -153,13 +153,8 @@ def find_clips_from_srt(
                         'score': score
                     })
     
-    # Sort clips by score
-    clips.sort(key=lambda x: x['score'], reverse=True)
-    
-    # If we have too many clips, take the best ones
-    max_clips = 10  # Maximum number of clips to return
-    if len(clips) > max_clips:
-        clips = clips[:max_clips]
+    # Sort clips by start time instead of score
+    clips.sort(key=lambda x: x['start'])
     
     return clips
 
@@ -232,6 +227,13 @@ def create_shorts_from_srt(
             ]
             
             subprocess.run(cmd, check=True, capture_output=True)
+            
+            # Check if the created clip is too small (less than 1MB)
+            if output_path.stat().st_size < 1024 * 1024:  # 1MB in bytes
+                logger.warning(f"Clip {i+1} is too small ({output_path.stat().st_size / 1024:.1f}KB), removing it")
+                output_path.unlink()
+                continue
+                
             clip_paths.append(output_path)
             logger.info(f"Created clip: {output_path}")
             

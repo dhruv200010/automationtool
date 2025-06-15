@@ -4,7 +4,8 @@
    OPENROUTER_API_KEY=
    DEEPGRAM_API_KEY=
 3. Run src/auth_youtube.py #to integrate Youtube (generates token.pickle in /config) [one time process only should be done to change youtube account]
-4. Set input & outfolder /config/master_config.json (I/O Folder, scheduling time, Boolean for pipeline   steps)  # make sure to save else wont work
+4. Set input & outfolder /config/master_config.json (I/O Folder, scheduling time, Boolean for pipeline   steps)  # make sure to save else wont work  
+      Change time zone: "America/Chicago" (for texas), "Asia/Kolkata" (for India)
 5. Run  run_pipeline.py                    # Print("TA-DA") only if it works.
 
 (individual scripts are in Src dir) 

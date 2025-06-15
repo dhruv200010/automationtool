@@ -87,9 +87,9 @@ def load_titles():
                     
                 # Clean up quotes from title and description
                 if 'title' in info:
-                    info['title'] = info['title'].strip('"')
+                    info['title'] = info['title'].strip('"').strip("'")  # Remove both single and double quotes
                 if 'description' in info:
-                    info['description'] = info['description'].strip('"')
+                    info['description'] = info['description'].strip('"').strip("'")  # Remove both single and double quotes
                 
                 # Clean up hashtags - ensure no duplicate # symbols
                 if 'hashtags' in info:
@@ -345,9 +345,9 @@ def upload_shorts():
             
             # Clean up quotes from title and description
             if 'title' in short_info:
-                short_info['title'] = short_info['title'].strip('"')
+                short_info['title'] = short_info['title'].strip('"').strip("'")  # Remove both single and double quotes
             if 'description' in short_info:
-                short_info['description'] = short_info['description'].strip('"')
+                short_info['description'] = short_info['description'].strip('"').strip("'")  # Remove both single and double quotes
             
             # Clean up hashtags - ensure no duplicate # symbols
             if 'hashtags' in short_info:

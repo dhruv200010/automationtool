@@ -54,7 +54,9 @@ class ShortsTitleGenerator:
             subs = pysrt.open(str(subtitle_path))
             content = []
             for sub in subs:
-                if start_time <= sub.start.ordinal / 1000 <= end_time:
+                sub_start = sub.start.ordinal / 1000
+                sub_end = sub.end.ordinal / 1000
+                if sub_start <= end_time and sub_end >= start_time:
                     content.append(sub.text)
             return " ".join(content)
         except Exception as e:
@@ -64,8 +66,8 @@ class ShortsTitleGenerator:
     def save_metadata(self, video_path: Path, title: str, hashtags: List[str], description: str, index: int, video_name: str):
         """Save metadata for a single short"""
         # Strip quotes from title and description
-        title = title.strip('"')
-        description = description.strip('"')
+        title = title.strip('"').strip("'")  # Remove both single and double quotes
+        description = description.strip('"').strip("'")  # Remove both single and double quotes
         
         metadata = {
             "title": title,
@@ -115,7 +117,9 @@ class ShortsTitleGenerator:
         print(f"Processing video: {video_name}")
         
         # Filter only shorts matching the current video's name
-        video_files = sorted(shorts_dir.glob(f"{video_name}_short_*.mp4"))
+        video_files = list(shorts_dir.glob(f"{video_name}_short_*.mp4"))
+        # Sort by clip number instead of filename
+        video_files.sort(key=lambda x: int(x.stem.split('_')[-1]))
         print(f"Found video files in {shorts_dir}: {[str(f) for f in video_files]}")
         
         if not video_files:

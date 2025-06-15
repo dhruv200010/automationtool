@@ -19,11 +19,6 @@ modules_path = project_root / "modules"
 if str(modules_path) not in sys.path:
     sys.path.insert(0, str(modules_path))
 
-# Debug print to verify paths
-print(f"Project root: {project_root}")
-print(f"Modules path: {modules_path}")
-print(f"Python path: {sys.path}")
-
 from modules.silence_trimmer import SilenceTrimmer
 
 logger = logging.getLogger(__name__)

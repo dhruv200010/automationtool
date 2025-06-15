@@ -34,6 +34,7 @@ class TitleGenerator:
                 if line.lower().startswith('title:'):
                     title = line[6:].strip()
                     title = re.sub(r'\{(\w+)\}', r'\1', title)  # Remove curly braces
+                    title = title.strip('"')  # Remove any surrounding quotes
                     continue
                 
                 # Extract hashtags
@@ -46,12 +47,14 @@ class TitleGenerator:
                 # Extract description
                 if line.lower().startswith('description:'):
                     description = line[12:].strip()
+                    description = description.strip('"')  # Remove any surrounding quotes
                     continue
             
             # If no title found, use the first line
             if not title and lines:
                 title = lines[0]
                 title = re.sub(r'\{(\w+)\}', r'\1', title)
+                title = title.strip('"')  # Remove any surrounding quotes
             
             # If no hashtags found, extract from all lines
             if not hashtags:
