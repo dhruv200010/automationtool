@@ -90,7 +90,7 @@ class SilenceTrimmer:
                     return None
         return None
 
-    def find_silence_segments(self, transcript_data: Dict, min_silence_duration: float = 0.5) -> List[Dict]:
+    def find_silence_segments(self, transcript_data: Dict, min_silence_duration: float = 0.5, buffer: float = 0.4) -> List[Dict]:
         """Find silence segments in the transcript"""
         words = transcript_data['results']['channels'][0]['alternatives'][0]['words']
         silence_segments = []
@@ -101,11 +101,16 @@ class SilenceTrimmer:
             silence_duration = next_start - current_end
            
             if silence_duration >= min_silence_duration:
-                silence_segments.append({
-                    'start': current_end,
-                    'end': next_start,
-                    'duration': silence_duration
-                })
+                # Leave buffer at start and end of silence
+                effective_start = current_end + buffer / 2
+                effective_end = next_start - buffer / 2
+                
+                if effective_start < effective_end:
+                    silence_segments.append({
+                        'start': effective_start,
+                        'end': effective_end,
+                        'duration': effective_end - effective_start
+                    })
        
         return silence_segments
 
@@ -166,7 +171,7 @@ class SilenceTrimmer:
             print(f"Error getting video duration: {e}")
             return 0
 
-    def process_video(self, video_path: str) -> str:
+    def process_video(self, video_path: str, buffer: float = 0.4) -> str:
         """Process a video to remove silence segments"""
         try:
             # Extract audio
@@ -184,7 +189,7 @@ class SilenceTrimmer:
                
                 # Find silence segments
                 print("Finding silence segments...")
-                silence_segments = self.find_silence_segments(transcript_data)
+                silence_segments = self.find_silence_segments(transcript_data, buffer=buffer)
                
                 # Create output path
                 video_name = Path(video_path).stem

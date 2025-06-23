@@ -54,7 +54,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"User {user.id} ({user.username}) started the bot.")
     # Create inline keyboard with Dropbox upload link
     keyboard = [
-        [InlineKeyboardButton("📤 Upload", url="https://www.dropbox.com/request/jK7A5oleK1MmswTXCJwG")]
+        [InlineKeyboardButton("📤 Upload", url="https://drive.google.com/drive/folders/1OK3RL0Zh7CxaxJs8WkFYMp12WE7JEw1H?usp=drive_link")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
