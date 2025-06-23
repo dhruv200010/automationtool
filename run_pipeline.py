@@ -255,6 +255,10 @@ def process_video(video_file: Path, config: dict) -> bool:
     """Process a single video through the pipeline"""
     logger.info(f"Processing video: {video_file}")
     
+    # Construct the path to the subtitled video
+    output_root = Path(config['output_folder']).expanduser().resolve()
+    subtitled_video_path = output_root / f"{video_file.stem}_with_subs.mp4"
+
     # Define the steps with their corresponding config keys
     steps = [
         {
@@ -264,7 +268,7 @@ def process_video(video_file: Path, config: dict) -> bool:
         },
         {
             "name": "Step 1.5: Trim silence from video",
-            "command": 'python src/trim_silence.py',
+            "command": f'python src/trim_silence.py "{subtitled_video_path}"',
             "config_key": "trim_silence"
         },
         {

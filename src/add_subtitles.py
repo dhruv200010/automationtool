@@ -60,70 +60,58 @@ def create_karaoke_dialogue(words, start_time, end_time, start_word_index=0):
     
     # Calculate time per chunk
     total_duration = end_time - start_time
-    time_per_chunk = total_duration / len(word_chunks)
+    time_per_chunk = total_duration / len(word_chunks) if word_chunks else 0
     
     dialogue_entries = []
-    layer = 1
+    layer = 1  # Keep layer consistent for these entries
     
     for chunk_index, chunk in enumerate(word_chunks):
+        if not chunk:
+            continue
+
         # Calculate timing for this chunk
         chunk_start = start_time + (chunk_index * time_per_chunk)
         chunk_end = chunk_start + time_per_chunk
         
         # Calculate time per word within this chunk
         chunk_duration = chunk_end - chunk_start
-        time_per_word = chunk_duration / len(chunk)
+        time_per_word = chunk_duration / len(chunk) if chunk else 0
         
-        # Split chunk into two lines
         mid = len(chunk) // 2
-        word_lines = [chunk[:mid], chunk[mid:]]
         
-        for i, word in enumerate(chunk):
+        # Iterate through each word in the chunk to create a dialogue line where it's highlighted
+        for i, word_to_highlight in enumerate(chunk):
             word_start = chunk_start + (i * time_per_word)
             word_end = word_start + time_per_word
             
-            # Create the line with the current word highlighted
-            line = []
-            current_line_words = []
-            line_count = 0
-            
+            # Build the complete line text for this specific highlight
+            line_parts = []
             for j, w in enumerate(chunk):
                 # Fix apostrophe capitalization
                 if "'" in w:
                     parts = w.split("'")
                     w = parts[0] + "'" + parts[1].lower()
+
+                if i == j:  # The word to highlight
+                    color_index = (start_word_index + (chunk_index * chunk_size) + j) % 3
+                    line_parts.append(f"{{\\c{highlight_colors[color_index]}\\1a&H00&}}{w}{{\\c&H00FFFFFF&\\1a&H00&}}")
+                else:  # Other words
+                    line_parts.append(f"{{\\1a&H00&}}{w}")
                 
-                current_line_words.append(w)
-                
-                # Add line break after reaching the middle of the chunk
-                if len(current_line_words) == mid:
-                    # Process the current line
-                    for k, word_in_line in enumerate(current_line_words):
-                        word_index = j - (mid - 1) + k
-                        if word_index == i:
-                            # Current word gets highlighted with proper ASS override syntax
-                            color_index = (start_word_index + (chunk_index * chunk_size) + i) % 3
-                            line.append(f"{{\\c{highlight_colors[color_index]}\\1a&H00&}}{word_in_line}{{\\c&H00FFFFFF&\\1a&H00&}}")
-                        else:
-                            # Other words stay white with full opacity
-                            line.append(f"{{\\1a&H00&}}{word_in_line}")
-                    
-                    # Add line break if not the last line
-                    if line_count < len(word_lines) - 1:
-                        line.append("\\N")
-                    
-                    current_line_words = []
-                    line_count += 1
+                # Add a line break if the chunk is being split and we're at the midpoint
+                if len(chunk) > 1 and mid > 0 and j == mid - 1:
+                    line_parts.append("\\N")
+
+            # Join parts and clean up potential space around the line break
+            line_text = " ".join(line_parts).replace(" \\N ", "\\N")
             
             # Format time as h:mm:ss.cc
             start_str = f"{int(word_start//3600):01d}:{int((word_start%3600)//60):02d}:{int(word_start%60):02d}.{int((word_start%1)*100):02d}"
             end_str = f"{int(word_end//3600):01d}:{int((word_end%3600)//60):02d}:{int(word_end%60):02d}.{int((word_end%1)*100):02d}"
             
-            # Only add the dialogue entry if it's not empty
-            if line:
-                dialogue_entry = f"Dialogue: {layer},{start_str},{end_str},Default,,0,0,0,,{' '.join(line)}"
-                dialogue_entries.append(dialogue_entry)
-    
+            dialogue_entry = f"Dialogue: {layer},{start_str},{end_str},Default,,0,0,0,,{line_text}"
+            dialogue_entries.append(dialogue_entry)
+            
     return "\n".join(dialogue_entries)
 
 def modify_ass_file(ass_path):

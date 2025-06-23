@@ -24,19 +24,16 @@ from modules.silence_trimmer import SilenceTrimmer
 logger = logging.getLogger(__name__)
 
 def main():
-    # Load and normalize output folder from config
-    config_path = project_root / "config" / "master_config.json"
-    with open(config_path, 'r', encoding='utf-8') as f:
-        config = json.load(f)
-        output_root = Path(config['output_folder']).expanduser().resolve()
+    if len(sys.argv) != 2:
+        print("Usage: python src/trim_silence.py <video_path>")
+        sys.exit(1)
+
+    video_path = Path(sys.argv[1])
     
-    # Get the most recent video file from the output directory
-    video_files = list(output_root.glob("*_with_subs.mp4"))
-    if not video_files:
-        raise FileNotFoundError("No processed video found in output directory")
-    
-    # Use the most recent video file
-    video_path = video_files[-1]
+    if not video_path.exists():
+        logger.error(f"Video file not found: {video_path}")
+        sys.exit(1)
+
     logger.info(f"Processing video: {video_path}")
 
     # Initialize silence trimmer

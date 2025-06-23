@@ -7,6 +7,7 @@ from pathlib import Path
 import requests
 from typing import List, Dict
 import sys
+import time
 
 # Add the project root to Python path
 project_root = Path(__file__).parent.parent.absolute()
@@ -60,8 +61,8 @@ class SilenceTrimmer:
             print(f"Error extracting audio from video: {e}")
             return None
 
-    def transcribe_with_deepgram(self, audio_file_path: str) -> Dict:
-        """Transcribe audio using Deepgram API"""
+    def transcribe_with_deepgram(self, audio_file_path: str, retries: int = 3, delay: int = 5) -> Dict:
+        """Transcribe audio using Deepgram API with retry logic"""
         api_key = os.getenv('DEEPGRAM_API_KEY')
         if not api_key:
             raise ValueError("DEEPGRAM_API_KEY not found in environment variables")
@@ -72,15 +73,22 @@ class SilenceTrimmer:
             "Content-Type": "audio/wav"
         }
        
-        try:
-            with open(audio_file_path, "rb") as f:
-                f.seek(0)
-                response = requests.post(url, headers=headers, data=f)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            print(f"Error transcribing audio: {e}")
-            return None
+        for attempt in range(retries):
+            try:
+                with open(audio_file_path, "rb") as f:
+                    f.seek(0)
+                    response = requests.post(url, headers=headers, data=f)
+                response.raise_for_status()
+                return response.json()
+            except requests.exceptions.RequestException as e:
+                print(f"Error transcribing audio (attempt {attempt + 1}/{retries}): {e}")
+                if attempt < retries - 1:
+                    print(f"Retrying in {delay} seconds...")
+                    time.sleep(delay)
+                else:
+                    print("All retry attempts failed.")
+                    return None
+        return None
 
     def find_silence_segments(self, transcript_data: Dict, min_silence_duration: float = 0.5) -> List[Dict]:
         """Find silence segments in the transcript"""

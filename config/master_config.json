@@ -1,11 +1,11 @@
 {
-  "input_folder": "C:\\\\Users\\\\sendt\\\\Downloads\\\\inputtest",
-  "output_folder": "C:\\\\Users\\\\sendt\\\\Downloads\\\\New folder",
+  "input_folder": "C:\\\\Users\\\\sendt\\\\Downloads\\\\n8nv2\\\\input",
+  "output_folder": "C:\\\\Users\\\\sendt\\\\Downloads\\\\n8nv2\\\\output",
   "pipeline_steps": {
     "add_subtitles": true,
     "trim_silence": true,
     "create_shorts": true,
-    "generate_titles": true,
+    "generate_titles": false,
     "upload_shorts": false
   },
   "schedule_config": {
