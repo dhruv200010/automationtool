@@ -67,7 +67,7 @@ class SilenceTrimmer:
         if not api_key:
             raise ValueError("DEEPGRAM_API_KEY not found in environment variables")
        
-        url = "https://api.deepgram.com/v1/listen"
+        url = "https://api.deepgram.com/v1/listen?language=hi&punctuate=true&smart_format=true"
         headers = {
             "Authorization": f"Token {api_key}",
             "Content-Type": "audio/wav"
@@ -204,8 +204,8 @@ class SilenceTrimmer:
                
             finally:
                 # Clean up temporary audio file
-                if os.path.exists(audio_path):
-                    os.unlink(audio_path)
+                if Path(audio_path).exists():
+                    Path(audio_path).unlink()
                    
         except Exception as e:
             print(f"Error processing video: {str(e)}")
