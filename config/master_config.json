@@ -1,6 +1,6 @@
 {
-  "input_folder": "C:\\\\Users\\\\sendt\\\\Downloads\\\\n8nv2\\\\input",
-  "output_folder": "C:\\\\Users\\\\sendt\\\\Downloads\\\\n8nv2\\\\output",
+  "input_folder": "/app/input",
+  "output_folder": "/app/output",
   "pipeline_steps": {
     "add_subtitles": true,
     "trim_silence": true,
