@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import subprocess
+import traceback
 from pathlib import Path
 from flask import Flask, request, jsonify, render_template_string
 import logging
@@ -16,6 +17,46 @@ app = Flask(__name__)
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def validate_environment():
+    """Validate that required environment variables and dependencies are available"""
+    logger.info("🔍 Validating environment...")
+    
+    # Check for required environment variables
+    required_env_vars = ['PORT']
+    missing_vars = []
+    
+    for var in required_env_vars:
+        if not os.environ.get(var):
+            missing_vars.append(var)
+    
+    if missing_vars:
+        logger.warning(f"⚠️ Missing environment variables: {missing_vars}")
+    
+    # Check for required directories
+    required_dirs = ['/app/input', '/app/output']
+    for dir_path in required_dirs:
+        Path(dir_path).mkdir(exist_ok=True)
+        logger.info(f"✅ Directory ready: {dir_path}")
+    
+    # Check for ffmpeg availability
+    try:
+        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            logger.info("✅ ffmpeg is available")
+        else:
+            logger.error("❌ ffmpeg not working properly")
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        logger.error("❌ ffmpeg not found - this will cause pipeline failures")
+    
+    # Check for Python dependencies
+    try:
+        import openai
+        logger.info("✅ OpenAI library available")
+    except ImportError:
+        logger.warning("⚠️ OpenAI library not found")
+    
+    logger.info("🔍 Environment validation complete")
 
 # HTML template for file upload
 UPLOAD_TEMPLATE = """
@@ -102,25 +143,74 @@ def upload_file():
                     'file': str(file_path)
                 })
             else:
+                # ✅ Add detailed error logging
+                logger.error("❌ Pipeline processing failed:")
+                logger.error(f"Return code: {result.returncode}")
+                logger.error(f"STDOUT: {result.stdout}")
+                logger.error(f"STDERR: {result.stderr}")
+                
                 return jsonify({
                     'error': 'Pipeline processing failed',
-                    'details': result.stderr
+                    'details': result.stderr,
+                    'return_code': result.returncode,
+                    'stdout': result.stdout
                 }), 500
                 
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as e:
+            logger.error(f"❌ Processing timeout: {str(e)}")
             return jsonify({
                 'error': 'Processing timeout - video may be too large for free plan',
                 'message': 'Try with a smaller video file'
             }), 408
             
     except Exception as e:
-        logger.error(f"Upload error: {str(e)}")
-        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
+        # ✅ Add traceback to logs for detailed error information
+        logger.error("❌ Upload error occurred:")
+        logger.error(f"Error: {str(e)}")
+        logger.error("Full traceback:")
+        traceback.print_exc()
+        
+        return jsonify({
+            'error': 'Upload failed',
+            'details': str(e)
+        }), 500
 
 @app.route('/health')
 def health_check():
     """Health check endpoint"""
     return jsonify({'status': 'healthy', 'message': 'Video automation pipeline is running'})
+
+@app.route('/debug')
+def debug_info():
+    """Debug endpoint to show environment and system info"""
+    try:
+        # Check ffmpeg
+        ffmpeg_status = "unknown"
+        try:
+            result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
+            ffmpeg_status = "available" if result.returncode == 0 else "error"
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            ffmpeg_status = "not_found"
+        
+        # Check directories
+        input_dir = Path('/app/input')
+        output_dir = Path('/app/output')
+        
+        return jsonify({
+            'ffmpeg_status': ffmpeg_status,
+            'input_directory_exists': input_dir.exists(),
+            'output_directory_exists': output_dir.exists(),
+            'input_directory_writable': input_dir.is_dir() and os.access(input_dir, os.W_OK),
+            'output_directory_writable': output_dir.is_dir() and os.access(output_dir, os.W_OK),
+            'python_version': sys.version,
+            'working_directory': os.getcwd(),
+            'environment_variables': {
+                'PORT': os.environ.get('PORT'),
+                'PYTHONPATH': os.environ.get('PYTHONPATH')
+            }
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/logs')
 def get_logs():
@@ -137,12 +227,11 @@ def get_logs():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    # Create necessary directories
-    Path('/app/input').mkdir(exist_ok=True)
-    Path('/app/output').mkdir(exist_ok=True)
+    # Validate environment before starting
+    validate_environment()
     
     # Get port from environment (Railway sets this)
     port = int(os.environ.get('PORT', 8000))
     
-    logger.info(f"Starting web server on port {port}")
+    logger.info(f"🚀 Starting web server on port {port}")
     app.run(host='0.0.0.0', port=port, debug=False)
