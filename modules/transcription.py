@@ -4,7 +4,7 @@ import subprocess
 import shutil
 import re
 from pathlib import Path
-from deepgram import Deepgram
+from deepgram import Deepgram, Options
 import asyncio
 from dotenv import load_dotenv
 import tempfile
@@ -21,7 +21,9 @@ class TranscriptionHandler:
         api_key = os.getenv('DEEPGRAM_API_KEY')
         if not api_key:
             raise ValueError("DEEPGRAM_API_KEY not found in environment variables")
-        self.dg_client = Deepgram(api_key)
+        # In Deepgram SDK v2.12.0, constructor requires Options object with API key
+        options = Options(api_key=api_key)
+        self.dg_client = Deepgram(options)
         
         # Initialize AI transliterator
         self.transliterator = AITransliterator()
