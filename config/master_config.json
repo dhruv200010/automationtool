@@ -1,9 +1,9 @@
 {
-  "input_folder": "/app/input",
+   "input_folder": "/app/input",
   "output_folder": "/app/output",
   "pipeline_steps": {
     "add_subtitles": true,
-    "trim_silence": true,
+    "trim_silence": false,
     "create_shorts": true,
     "generate_titles": false,
     "upload_shorts": false

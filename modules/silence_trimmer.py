@@ -47,6 +47,9 @@ class SilenceTrimmer:
             temp_audio_path = temp_audio.name
             temp_audio.close()
 
+            print(f"🔧 Extracting audio from: {video_path}")
+            print(f"🔧 Output audio to: {temp_audio_path}")
+
             stream = ffmpeg.input(video_path)
             stream = ffmpeg.output(
                 stream, temp_audio_path,
@@ -56,9 +59,15 @@ class SilenceTrimmer:
                 ar='16000'
             )
             out, err = ffmpeg.run(stream, overwrite_output=True, capture_stdout=True, capture_stderr=True)
+            print(f"✅ Audio extraction successful")
             return temp_audio_path
+        except ffmpeg.Error as e:
+            print(f"❌ FFmpeg error extracting audio from video:")
+            print(f"STDOUT: {e.stdout.decode() if e.stdout else 'No stdout'}")
+            print(f"STDERR: {e.stderr.decode() if e.stderr else 'No stderr'}")
+            return None
         except Exception as e:
-            print(f"Error extracting audio from video: {e}")
+            print(f"❌ Error extracting audio from video: {e}")
             return None
 
     def transcribe_with_deepgram(self, audio_file_path: str, retries: int = 3, delay: int = 5) -> Dict:
@@ -152,7 +161,16 @@ class SilenceTrimmer:
                 output_path
             ]
            
-            subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
+            print(f"🔧 Running FFmpeg command: {' '.join(ffmpeg_cmd)}")
+            try:
+                result = subprocess.run(ffmpeg_cmd, check=True, capture_output=True, text=True)
+                print(f"✅ FFmpeg command successful")
+            except subprocess.CalledProcessError as e:
+                print(f"❌ FFmpeg command failed:")
+                print(f"Return code: {e.returncode}")
+                print(f"STDOUT: {e.stdout}")
+                print(f"STDERR: {e.stderr}")
+                raise
             
             # Clean up temporary file
             os.unlink(concat_file)
