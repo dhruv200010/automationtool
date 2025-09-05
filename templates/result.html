@@ -101,6 +101,12 @@
         
         <div class="status-badge">✅ Successfully Processed</div>
         
+        <div style="text-align: center; margin: 20px 0; color: #666;">
+            <strong>Processed Video:</strong> {{ filename }}<br>
+            <strong>File Size:</strong> {{ file_size }}<br>
+            <small>Completed at: {{ timestamp }}</small>
+        </div>
+        
         <div class="video-container">
             <video width="600" controls>
                 <source src="{{ video_url }}" type="video/mp4">

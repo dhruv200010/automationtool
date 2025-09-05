@@ -18,6 +18,16 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def clear_pipeline_logs():
+    """Clear pipeline logs before processing a new video"""
+    try:
+        log_file = Path('/app/pipeline.log')
+        if log_file.exists():
+            log_file.unlink()
+            logger.info("🗑️ Cleared previous pipeline logs")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not clear logs: {str(e)}")
+
 def validate_environment():
     """Validate that required environment variables and dependencies are available"""
     logger.info("🔍 Validating environment...")
@@ -116,9 +126,30 @@ def upload_file():
         if file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
         
+        # Clear previous logs and old output files
+        clear_pipeline_logs()
+        
+        # Clean up old output files to avoid confusion
+        output_dir = Path('/app/output')
+        output_dir.mkdir(exist_ok=True)
+        for old_file in output_dir.glob('*.mp4'):
+            try:
+                old_file.unlink()
+                logger.info(f"🗑️ Removed old output file: {old_file.name}")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not remove old file {old_file.name}: {str(e)}")
+        
         # Create input directory
         input_dir = Path('/app/input')
         input_dir.mkdir(exist_ok=True)
+        
+        # Clean up old input files
+        for old_file in input_dir.glob('*'):
+            try:
+                old_file.unlink()
+                logger.info(f"🗑️ Removed old input file: {old_file.name}")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not remove old file {old_file.name}: {str(e)}")
         
         # Save uploaded file
         file_path = input_dir / file.filename
@@ -259,8 +290,19 @@ def show_result():
             except Exception as e:
                 logs = f"Error reading logs: {str(e)}"
         
+        # Get file info
+        file_size = video_path.stat().st_size if video_path.exists() else 0
+        file_size_mb = round(file_size / (1024 * 1024), 2)
+        
+        # Get current timestamp
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
         return render_template('result.html', 
-                             video_url=f'/output/{filename}', 
+                             video_url=f'/output/{filename}',
+                             filename=filename,
+                             file_size=f"{file_size_mb} MB",
+                             timestamp=timestamp,
                              logs=logs)
     except Exception as e:
         logger.error(f"Error in show_result: {str(e)}")
