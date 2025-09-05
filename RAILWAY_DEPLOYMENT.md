@@ -3,11 +3,12 @@
 ## ✅ **What's Ready for Railway**
 
 Your project is now configured for Railway deployment with:
-- ✅ **FFmpeg support** via nixpacks.toml
-- ✅ **Web interface** for file uploads
+- ✅ **FFmpeg support** via railpack.toml
+- ✅ **Web interface** for file uploads (app.py)
 - ✅ **Railway-compatible paths** (/app/input, /app/output)
 - ✅ **Environment variable support**
 - ✅ **Free plan optimization**
+- ✅ **Multiple entry points** (app.py, main.py)
 
 ## 🚀 **Deployment Steps**
 
@@ -25,9 +26,17 @@ git push origin main
 3. Click **"New Project"**
 4. Select **"Deploy from GitHub repo"**
 5. Choose your `automationtool` repository
-6. Railway will automatically detect the `nixpacks.toml` and start building
+6. Railway will automatically detect the `railpack.toml` and start building
 
-### 3. **Set Environment Variables**
+### 3. **Set Start Command (if needed)**
+
+If Railway still shows "No start command found":
+1. Go to your project → **Settings** tab
+2. Find **"Start Command"** field
+3. Enter: `python app.py`
+4. Save and redeploy
+
+### 4. **Set Environment Variables**
 
 In Railway dashboard, go to your project → **Variables** tab and add:
 
@@ -37,7 +46,7 @@ DEEPGRAM_API_KEY=c4183f2d74c789c131cac4dcc7f7a41545d675e2
 TELEGRAM_BOT_TOKEN=7951302729:AAEJJZv-C4XX_vewa4PMb0w8gmxjG_O1qjk
 ```
 
-### 4. **Access Your App**
+### 5. **Access Your App**
 
 Once deployed, Railway will give you a URL like:
 `https://your-app-name.railway.app`
@@ -61,10 +70,11 @@ Once deployed, Railway will give you a URL like:
 ### **Build Fails**
 - Check Railway logs for errors
 - Ensure all files are committed to GitHub
-- Verify `nixpacks.toml` syntax
+- Verify `railpack.toml` syntax
+- If "No start command found" error, Railway should auto-detect `app.py` or `main.py`
 
 ### **FFmpeg Not Found**
-- Railway should install FFmpeg automatically via nixpacks
+- Railway should install FFmpeg automatically via railpack
 - Check build logs for FFmpeg installation
 
 ### **Processing Timeout**
