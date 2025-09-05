@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Video Processed Successfully</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 1000px; 
+            margin: 0 auto; 
+            padding: 20px; 
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { 
+            color: #28a745; 
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .video-container {
+            text-align: center;
+            margin: 30px 0;
+        }
+        video { 
+            max-width: 100%; 
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        .download-section {
+            text-align: center;
+            margin: 30px 0;
+        }
+        .download-btn {
+            display: inline-block;
+            background: #007bff;
+            color: white;
+            padding: 15px 30px;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+        .download-btn:hover {
+            background: #0056b3;
+            color: white;
+            text-decoration: none;
+        }
+        .logs-section {
+            margin-top: 40px;
+        }
+        .logs-header {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .logs-content {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .back-btn {
+            display: inline-block;
+            background: #6c757d;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .back-btn:hover {
+            background: #545b62;
+            color: white;
+            text-decoration: none;
+        }
+        .status-badge {
+            display: inline-block;
+            background: #28a745;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 Video Processing Complete!</h1>
+        
+        <div class="status-badge">✅ Successfully Processed</div>
+        
+        <div class="video-container">
+            <video width="600" controls>
+                <source src="{{ video_url }}" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+        </div>
+
+        <div class="download-section">
+            <a href="{{ video_url }}" download class="download-btn">
+                📥 Download Processed Video
+            </a>
+        </div>
+
+        <div class="logs-section">
+            <h3 class="logs-header">🪵 Processing Logs:</h3>
+            <div class="logs-content">{{ logs }}</div>
+        </div>
+
+        <div style="text-align: center;">
+            <a href="/" class="back-btn">← Process Another Video</a>
+        </div>
+    </div>
+</body>
+</html>

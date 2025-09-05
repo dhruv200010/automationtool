@@ -4,7 +4,7 @@ import json
 import subprocess
 import traceback
 from pathlib import Path
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify, render_template_string, render_template, send_from_directory, redirect, url_for
 import logging
 
 # Add the project root to Python path
@@ -93,7 +93,7 @@ UPLOAD_TEMPLATE = """
     <script>
         document.querySelector('form').addEventListener('submit', function(e) {
             const statusDiv = document.getElementById('status');
-            statusDiv.innerHTML = '<div class="info">⏳ Processing video... This may take a few minutes.</div>';
+            statusDiv.innerHTML = '<div class="info">⏳ Processing video... This may take a few minutes. You will be redirected to the result page when complete.</div>';
         });
     </script>
 </body>
@@ -137,11 +137,22 @@ def upload_file():
             )
             
             if result.returncode == 0:
-                return jsonify({
-                    'message': 'Video processed successfully!',
-                    'output': result.stdout,
-                    'file': str(file_path)
-                })
+                # Extract the output filename from the logs
+                output_filename = None
+                for line in result.stdout.split('\n'):
+                    if 'Output video saved to:' in line:
+                        output_filename = Path(line.split('Output video saved to: ')[1]).name
+                        break
+                
+                if output_filename:
+                    # Redirect to result page
+                    return redirect(url_for('show_result', file=output_filename))
+                else:
+                    return jsonify({
+                        'message': 'Video processed successfully!',
+                        'output': result.stdout,
+                        'file': str(file_path)
+                    })
             else:
                 # ✅ Add detailed error logging
                 logger.error("❌ Pipeline processing failed:")
@@ -225,6 +236,44 @@ def get_logs():
             return jsonify({'logs': 'No logs available yet'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/result')
+def show_result():
+    """Display processed video with download and logs"""
+    try:
+        filename = request.args.get('file')
+        if not filename:
+            return jsonify({'error': 'No file specified'}), 400
+        
+        video_path = Path('/app/output') / filename
+        if not video_path.exists():
+            return jsonify({'error': f'Video file not found: {filename}'}), 404
+        
+        # Read logs from pipeline.log
+        log_file = Path('/app/pipeline.log')
+        logs = "No logs available yet."
+        if log_file.exists():
+            try:
+                with open(log_file, 'r', encoding='utf-8') as f:
+                    logs = f.read()
+            except Exception as e:
+                logs = f"Error reading logs: {str(e)}"
+        
+        return render_template('result.html', 
+                             video_url=f'/output/{filename}', 
+                             logs=logs)
+    except Exception as e:
+        logger.error(f"Error in show_result: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/output/<path:filename>')
+def serve_video(filename):
+    """Serve output video files"""
+    try:
+        return send_from_directory('/app/output', filename)
+    except Exception as e:
+        logger.error(f"Error serving video {filename}: {str(e)}")
+        return jsonify({'error': f'File not found: {filename}'}), 404
 
 if __name__ == '__main__':
     # Validate environment before starting
