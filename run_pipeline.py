@@ -156,29 +156,32 @@ def get_pipeline_config():
         sys.exit(1)
 
 def normalize_paths_in_config():
-    """Normalize paths in master_config.json to use double backslashes"""
+    """Normalize paths in master_config.json based on environment"""
     config_path = PROJECT_ROOT / "config" / "master_config.json"
     if not config_path.exists():
         logger.error("Error: master_config.json not found in config directory!")
         sys.exit(1)
     
     try:
-        # First read the file content as a raw string
+        # Read the config
         with open(config_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-            
-        # Fix common JSON formatting issues
-        content = content.replace('""', '"')  # Remove double quotes
-        content = content.replace('\\', '\\\\')  # Convert single backslashes to double
+            config = json.load(f)
         
-        # Parse the JSON
-        config = json.loads(content)
-        
-        # Ensure paths are properly formatted
-        if 'input_folder' in config:
-            config['input_folder'] = str(Path(config['input_folder']).resolve()).replace('\\', '\\\\')
-        if 'output_folder' in config:
-            config['output_folder'] = str(Path(config['output_folder']).resolve()).replace('\\', '\\\\')
+        # Check if running on Railway (Railway sets PORT environment variable)
+        if os.environ.get('PORT'):
+            # Use Railway paths
+            config['input_folder'] = '/app/input'
+            config['output_folder'] = '/app/output'
+            logger.info("🚀 Running on Railway - using Railway paths in config")
+        else:
+            # For local development, normalize Windows paths
+            if 'input_folder' in config:
+                input_path = config['input_folder'].replace('\\\\', '\\')
+                config['input_folder'] = str(Path(input_path).resolve()).replace('\\', '\\\\')
+            if 'output_folder' in config:
+                output_path = config['output_folder'].replace('\\\\', '\\')
+                config['output_folder'] = str(Path(output_path).resolve()).replace('\\', '\\\\')
+            logger.info("💻 Running locally - normalized Windows paths in config")
         
         # Write back the normalized config
         with open(config_path, 'w', encoding='utf-8') as f:
