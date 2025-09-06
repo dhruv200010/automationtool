@@ -21,12 +21,43 @@ logger = logging.getLogger(__name__)
 def clear_pipeline_logs():
     """Clear pipeline logs before processing a new video"""
     try:
-        log_file = Path('/app/pipeline.log')
+        log_file = Path('pipeline.log')
         if log_file.exists():
             log_file.unlink()
             logger.info("🗑️ Cleared previous pipeline logs")
     except Exception as e:
         logger.warning(f"⚠️ Could not clear logs: {str(e)}")
+
+def get_config_paths():
+    """Get input and output paths from config file"""
+    try:
+        config_path = Path(__file__).parent / "config" / "master_config.json"
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        input_folder = config.get('input_folder', './input')
+        output_folder = config.get('output_folder', './output')
+        
+        # Check if running on Railway (Railway sets PORT environment variable)
+        if os.environ.get('PORT'):
+            # Use Railway paths
+            input_folder = '/app/input'
+            output_folder = '/app/output'
+            logger.info("🚀 Running on Railway - using Railway paths")
+        else:
+            # Normalize paths for Windows local development
+            input_folder = input_folder.replace('\\\\', '\\')
+            output_folder = output_folder.replace('\\\\', '\\')
+            logger.info("💻 Running locally - using config paths")
+        
+        return input_folder, output_folder
+    except Exception as e:
+        logger.warning(f"⚠️ Could not read config, using default paths: {str(e)}")
+        # Use Railway paths if PORT is set, otherwise local paths
+        if os.environ.get('PORT'):
+            return '/app/input', '/app/output'
+        else:
+            return './input', './output'
 
 def validate_environment():
     """Validate that required environment variables and dependencies are available"""
@@ -43,10 +74,12 @@ def validate_environment():
     if missing_vars:
         logger.warning(f"⚠️ Missing environment variables: {missing_vars}")
     
-    # Check for required directories
-    required_dirs = ['/app/input', '/app/output']
+    # Get paths from config
+    input_folder, output_folder = get_config_paths()
+    required_dirs = [input_folder, output_folder]
+    
     for dir_path in required_dirs:
-        Path(dir_path).mkdir(exist_ok=True)
+        Path(dir_path).mkdir(parents=True, exist_ok=True)
         logger.info(f"✅ Directory ready: {dir_path}")
     
     # Check for ffmpeg availability
@@ -129,9 +162,12 @@ def upload_file():
         # Clear previous logs and old output files
         clear_pipeline_logs()
         
+        # Get paths from config
+        input_folder, output_folder = get_config_paths()
+        
         # Clean up old output files to avoid confusion
-        output_dir = Path('/app/output')
-        output_dir.mkdir(exist_ok=True)
+        output_dir = Path(output_folder)
+        output_dir.mkdir(parents=True, exist_ok=True)
         for old_file in output_dir.glob('*.mp4'):
             try:
                 old_file.unlink()
@@ -140,7 +176,7 @@ def upload_file():
                 logger.warning(f"⚠️ Could not remove old file {old_file.name}: {str(e)}")
         
         # Create input directory
-        input_dir = Path('/app/input')
+        input_dir = Path(input_folder)
         input_dir.mkdir(exist_ok=True)
         
         # Clean up old input files
@@ -235,8 +271,9 @@ def debug_info():
             ffmpeg_status = "not_found"
         
         # Check directories
-        input_dir = Path('/app/input')
-        output_dir = Path('/app/output')
+        input_folder, output_folder = get_config_paths()
+        input_dir = Path(input_folder)
+        output_dir = Path(output_folder)
         
         return jsonify({
             'ffmpeg_status': ffmpeg_status,
@@ -258,7 +295,7 @@ def debug_info():
 def get_logs():
     """Get recent logs"""
     try:
-        log_file = Path('/app/pipeline.log')
+        log_file = Path('pipeline.log')
         if log_file.exists():
             with open(log_file, 'r', encoding='utf-8') as f:
                 logs = f.read()
@@ -276,12 +313,13 @@ def show_result():
         if not filename:
             return jsonify({'error': 'No file specified'}), 400
         
-        video_path = Path('/app/output') / filename
+        _, output_folder = get_config_paths()
+        video_path = Path(output_folder) / filename
         if not video_path.exists():
             return jsonify({'error': f'Video file not found: {filename}'}), 404
         
         # Read logs from pipeline.log
-        log_file = Path('/app/pipeline.log')
+        log_file = Path('pipeline.log')
         logs = "No logs available yet."
         if log_file.exists():
             try:
@@ -312,7 +350,8 @@ def show_result():
 def serve_video(filename):
     """Serve output video files"""
     try:
-        return send_from_directory('/app/output', filename)
+        _, output_folder = get_config_paths()
+        return send_from_directory(output_folder, filename)
     except Exception as e:
         logger.error(f"Error serving video {filename}: {str(e)}")
         return jsonify({'error': f'File not found: {filename}'}), 404
