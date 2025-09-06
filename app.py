@@ -193,6 +193,10 @@ def upload_file():
         
         logger.info(f"File uploaded: {file_path}")
         
+        # Small delay to ensure file is fully written
+        import time
+        time.sleep(1)
+        
         # Trigger pipeline processing in background
         try:
             # Run the pipeline

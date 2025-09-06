@@ -198,21 +198,30 @@ def get_all_videos(folder_path: Path) -> list[Path]:
         logger.error(f"Error: Input folder '{folder_path}' not found!")
         sys.exit(1)
     
-    # Supported video formats
+    # Supported video formats (case-insensitive)
     video_extensions = ['.mp4', '.mov', '.avi', '.mkv']
     
-    # Get all video files in the folder
+    # Get all video files in the folder (case-insensitive)
     video_files = []
-    for ext in video_extensions:
-        video_files.extend(folder_path.glob(f'*{ext}'))
+    for file_path in folder_path.iterdir():
+        if file_path.is_file():
+            file_ext = file_path.suffix.lower()
+            if file_ext in video_extensions:
+                video_files.append(file_path)
     
     if not video_files:
         logger.error(f"Error: No video files found in '{folder_path}'!")
+        # List all files in the directory for debugging
+        all_files = list(folder_path.iterdir())
+        if all_files:
+            logger.info(f"Files found in directory: {[f.name for f in all_files]}")
+        else:
+            logger.info("Directory is empty")
         sys.exit(1)
     
     # Sort by modification time
     video_files.sort(key=lambda x: x.stat().st_mtime)
-    logger.info(f"Found {len(video_files)} video files")
+    logger.info(f"Found {len(video_files)} video files: {[f.name for f in video_files]}")
     return video_files
 
 def run_command(command: str, step_name: str) -> bool:
