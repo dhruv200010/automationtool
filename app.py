@@ -426,8 +426,13 @@ def get_task_result(task_id):
             result = task.result
             if result.get('status') == 'SUCCESS':
                 # Always redirect to result page - it will handle short clips display
-                return redirect(url_for('show_result', 
-                                      video_base_name=result.get('video_base_name')))
+                video_base_name = result.get('video_base_name')
+                if not video_base_name:
+                    return jsonify({'error': 'No video base name in result'}), 500
+                
+                result_url = url_for('show_result', video_base_name=video_base_name)
+                print(f"DEBUG: Redirecting to: {result_url}")
+                return redirect(result_url)
             else:
                 return jsonify(result)
         elif task.state == 'FAILURE':
@@ -539,6 +544,8 @@ def show_result():
         
         if not video_base_name:
             return jsonify({'error': 'No video base name specified'}), 400
+        
+        print(f"DEBUG: show_result called with video_base_name: {video_base_name}")
         
         _, output_folder = get_config_paths()
         output_dir = Path(output_folder)
