@@ -171,11 +171,19 @@ def process_video_task(self, filename):
             except Exception as e:
                 logger.warning(f"⚠️ Could not schedule auto-cleanup: {str(e)}")
             
+            # Return only short clips with proper URLs
+            short_clips_with_urls = []
+            for clip in short_clips:
+                short_clips_with_urls.append({
+                    'filename': clip['filename'],
+                    'url': f'/output/{clip["filename"]}',
+                    'size': clip['size']
+                })
+            
             return {
                 'status': 'SUCCESS',
                 'message': f'Video processed successfully! Generated {len(short_clips)} short clips. Auto-cleanup scheduled in 10 minutes.',
-                'output_filename': output_filename,
-                'short_clips': short_clips,
+                'short_clips': short_clips_with_urls,
                 'video_base_name': video_base_name,
                 'stdout': result.stdout,
                 'file': str(file_path)

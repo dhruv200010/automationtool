@@ -424,15 +424,10 @@ def get_task_result(task_id):
         
         if task.state == 'SUCCESS':
             result = task.result
-            if result.get('status') == 'SUCCESS' and result.get('short_clips') and len(result.get('short_clips', [])) > 0:
-                # Redirect to result page with short clips data
+            if result.get('status') == 'SUCCESS':
+                # Always redirect to result page - it will handle short clips display
                 return redirect(url_for('show_result', 
-                                      file=result['output_filename'],
-                                      video_base_name=result.get('video_base_name'),
-                                      short_clips=len(result.get('short_clips', []))))
-            elif result.get('status') == 'SUCCESS' and result.get('output_filename'):
-                # Fallback for videos without short clips
-                return redirect(url_for('show_result', file=result['output_filename']))
+                                      video_base_name=result.get('video_base_name')))
             else:
                 return jsonify(result)
         elif task.state == 'FAILURE':
@@ -540,39 +535,38 @@ def get_logs():
 def show_result():
     """Display processed video with download and logs"""
     try:
-        filename = request.args.get('file')
         video_base_name = request.args.get('video_base_name')
         
-        if not filename:
-            return jsonify({'error': 'No file specified'}), 400
+        if not video_base_name:
+            return jsonify({'error': 'No video base name specified'}), 400
         
         _, output_folder = get_config_paths()
+        output_dir = Path(output_folder)
         
-        # If we have video_base_name, look for short clips
+        # Look for short clips
         short_clips = []
-        if video_base_name:
-            output_dir = Path(output_folder)
-            pattern = f"{video_base_name}_short_*.mp4"
-            for clip_file in output_dir.glob(pattern):
-                if clip_file.is_file():
-                    clip_size = round(clip_file.stat().st_size / (1024 * 1024), 2)
-                    short_clips.append({
-                        'filename': clip_file.name,
-                        'url': f'/output/{clip_file.name}',
-                        'size': f"{clip_size} MB"
-                    })
-            # Sort clips by name (short_1, short_2, etc.)
-            short_clips.sort(key=lambda x: x['filename'])
+        pattern = f"{video_base_name}_short_*.mp4"
+        for clip_file in output_dir.glob(pattern):
+            if clip_file.is_file():
+                clip_size = round(clip_file.stat().st_size / (1024 * 1024), 2)
+                short_clips.append({
+                    'filename': clip_file.name,
+                    'url': f'/output/{clip_file.name}',
+                    'size': f"{clip_size} MB"
+                })
+        # Sort clips by name (short_1, short_2, etc.)
+        short_clips.sort(key=lambda x: x['filename'])
         
-        # Main video info
-        video_path = Path(output_folder) / filename
+        # Look for main processed video as fallback
         main_video = None
-        if video_path.exists():
-            file_size = video_path.stat().st_size
+        main_video_pattern = f"{video_base_name}_with_subs_trimmed.mp4"
+        main_video_path = output_dir / main_video_pattern
+        if main_video_path.exists():
+            file_size = main_video_path.stat().st_size
             file_size_mb = round(file_size / (1024 * 1024), 2)
             main_video = {
-                'filename': filename,
-                'url': f'/output/{filename}',
+                'filename': main_video_path.name,
+                'url': f'/output/{main_video_path.name}',
                 'size': f"{file_size_mb} MB"
             }
         
