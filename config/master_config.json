@@ -1,6 +1,6 @@
 {
-  "input_folder": "C:\\\\Users\\\\sendt\\\\Downloads\\\\n8nv2\\\\input",
-  "output_folder": "C:\\\\Users\\\\sendt\\\\Downloads\\\\n8nv2\\\\output",
+  "input_folder": "/opt/video-automation/input",
+  "output_folder": "/opt/video-automation/output",
   "pipeline_steps": {
     "add_subtitles": true,
     "trim_silence": true,
@@ -22,5 +22,13 @@
     "min_interval_hours": 4,
     "max_videos_per_week": 8,
     "timezone": "Asia/Kolkata"
+  },
+  "celery_config": {
+    "broker_url": "redis://localhost:6379/0",
+    "result_backend": "redis://localhost:6379/0",
+    "task_time_limit": 1800,
+    "task_soft_time_limit": 1500,
+    "worker_concurrency": 1,
+    "worker_pool": "solo"
   }
 }

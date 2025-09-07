@@ -6,6 +6,7 @@ import traceback
 from pathlib import Path
 from flask import Flask, request, jsonify, render_template_string, render_template, send_from_directory, redirect, url_for
 import logging
+from celery_app import celery_app, process_video_task, cleanup_task
 
 # Add the project root to Python path
 project_root = Path(__file__).parent.absolute()
@@ -38,26 +39,16 @@ def get_config_paths():
         input_folder = config.get('input_folder', './input')
         output_folder = config.get('output_folder', './output')
         
-        # Check if running on Railway (Railway sets PORT environment variable)
-        if os.environ.get('PORT'):
-            # Use Railway paths
-            input_folder = '/app/input'
-            output_folder = '/app/output'
-            logger.info("🚀 Running on Railway - using Railway paths")
-        else:
-            # Normalize paths for Windows local development
-            input_folder = input_folder.replace('\\\\', '\\')
-            output_folder = output_folder.replace('\\\\', '\\')
-            logger.info("💻 Running locally - using config paths")
+        # Use Hostinger KVM 2 paths
+        input_folder = '/opt/video-automation/input'
+        output_folder = '/opt/video-automation/output'
+        logger.info("🖥️ Running on Hostinger KVM 2 - using Hostinger paths")
         
         return input_folder, output_folder
     except Exception as e:
         logger.warning(f"⚠️ Could not read config, using default paths: {str(e)}")
-        # Use Railway paths if PORT is set, otherwise local paths
-        if os.environ.get('PORT'):
-            return '/app/input', '/app/output'
-        else:
-            return './input', './output'
+        # Use Hostinger KVM 2 default paths
+        return '/opt/video-automation/input', '/opt/video-automation/output'
 
 def validate_environment():
     """Validate that required environment variables and dependencies are available"""
@@ -101,7 +92,7 @@ def validate_environment():
     
     logger.info("🔍 Environment validation complete")
 
-# HTML template for file upload
+# HTML template for file upload with async processing
 UPLOAD_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -113,31 +104,162 @@ UPLOAD_TEMPLATE = """
         .upload-area:hover { border-color: #999; }
         button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
         button:hover { background: #0056b3; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
         .status { margin: 20px 0; padding: 10px; border-radius: 5px; }
         .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        .warning { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+        .progress-bar { width: 100%; height: 20px; background-color: #f0f0f0; border-radius: 10px; overflow: hidden; margin: 10px 0; }
+        .progress-fill { height: 100%; background-color: #007bff; width: 0%; transition: width 0.3s ease; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #007bff; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: inline-block; margin-right: 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .hidden { display: none; }
+        .task-info { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0; }
     </style>
 </head>
 <body>
     <h1>🎬 Video Automation Pipeline</h1>
     <p>Upload a video file to process it through the automation pipeline.</p>
     
-    <form action="/upload" method="post" enctype="multipart/form-data">
+    <form id="uploadForm" enctype="multipart/form-data">
         <div class="upload-area">
             <input type="file" name="file" accept=".mp4,.mov,.avi,.mkv" required>
             <p>Select a video file (.mp4, .mov, .avi, .mkv)</p>
         </div>
-        <button type="submit">🚀 Process Video</button>
+        <button type="submit" id="submitBtn">🚀 Process Video</button>
     </form>
     
     <div id="status"></div>
+    <div id="taskInfo" class="task-info hidden">
+        <h3>Task Information</h3>
+        <p><strong>Task ID:</strong> <span id="taskId"></span></p>
+        <p><strong>Status:</strong> <span id="taskStatus"></span></p>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <p id="progressText">Processing...</p>
+    </div>
     
     <script>
-        document.querySelector('form').addEventListener('submit', function(e) {
+        let currentTaskId = null;
+        let statusCheckInterval = null;
+        
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
             const statusDiv = document.getElementById('status');
-            statusDiv.innerHTML = '<div class="info">⏳ Processing video... This may take a few minutes. You will be redirected to the result page when complete.</div>';
+            const taskInfoDiv = document.getElementById('taskInfo');
+            const submitBtn = document.getElementById('submitBtn');
+            
+            // Disable form and show initial status
+            submitBtn.disabled = true;
+            submitBtn.textContent = '⏳ Uploading...';
+            statusDiv.innerHTML = '<div class="info">⏳ Uploading video file...</div>';
+            
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    currentTaskId = result.task_id;
+                    statusDiv.innerHTML = '<div class="info">✅ Video uploaded successfully! Processing started.</div>';
+                    
+                    // Show task info
+                    document.getElementById('taskId').textContent = currentTaskId;
+                    document.getElementById('taskStatus').textContent = 'PROCESSING';
+                    taskInfoDiv.classList.remove('hidden');
+                    
+                    // Start status checking
+                    startStatusCheck();
+                } else {
+                    statusDiv.innerHTML = `<div class="error">❌ Upload failed: ${result.error || 'Unknown error'}</div>`;
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = '🚀 Process Video';
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="error">❌ Upload error: ${error.message}</div>`;
+                submitBtn.disabled = false;
+                submitBtn.textContent = '🚀 Process Video';
+            }
         });
+        
+        function startStatusCheck() {
+            if (statusCheckInterval) {
+                clearInterval(statusCheckInterval);
+            }
+            
+            statusCheckInterval = setInterval(async () => {
+                if (!currentTaskId) return;
+                
+                try {
+                    const response = await fetch(`/task/${currentTaskId}`);
+                    const result = await response.json();
+                    
+                    if (response.ok) {
+                        updateTaskStatus(result);
+                        
+                        if (result.state === 'SUCCESS' || result.state === 'FAILURE') {
+                            clearInterval(statusCheckInterval);
+                            handleTaskCompletion(result);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error checking task status:', error);
+                }
+            }, 2000); // Check every 2 seconds
+        }
+        
+        function updateTaskStatus(result) {
+            const statusSpan = document.getElementById('taskStatus');
+            const progressText = document.getElementById('progressText');
+            const progressFill = document.getElementById('progressFill');
+            
+            statusSpan.textContent = result.state;
+            
+            if (result.state === 'PENDING') {
+                progressText.innerHTML = '<span class="spinner"></span>Task is waiting to be processed...';
+                progressFill.style.width = '10%';
+            } else if (result.state === 'PROGRESS') {
+                progressText.innerHTML = `<span class="spinner"></span>${result.status || 'Processing...'}`;
+                progressFill.style.width = '50%';
+            } else if (result.state === 'SUCCESS') {
+                progressText.textContent = '✅ Task completed successfully!';
+                progressFill.style.width = '100%';
+                progressFill.style.backgroundColor = '#28a745';
+            } else if (result.state === 'FAILURE') {
+                progressText.textContent = '❌ Task failed';
+                progressFill.style.width = '100%';
+                progressFill.style.backgroundColor = '#dc3545';
+            }
+        }
+        
+        function handleTaskCompletion(result) {
+            const statusDiv = document.getElementById('status');
+            const submitBtn = document.getElementById('submitBtn');
+            
+            if (result.state === 'SUCCESS') {
+                if (result.result && result.result.output_filename) {
+                    statusDiv.innerHTML = '<div class="success">✅ Video processed successfully! Redirecting to result page...</div>';
+                    setTimeout(() => {
+                        window.location.href = `/result?file=${result.result.output_filename}`;
+                    }, 2000);
+                } else {
+                    statusDiv.innerHTML = '<div class="success">✅ Video processed successfully!</div>';
+                }
+            } else {
+                statusDiv.innerHTML = `<div class="error">❌ Processing failed: ${result.error || 'Unknown error'}</div>`;
+            }
+            
+            // Re-enable form
+            submitBtn.disabled = false;
+            submitBtn.textContent = '🚀 Process Video';
+        }
     </script>
 </body>
 </html>
@@ -150,7 +272,7 @@ def index():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    """Handle file upload and trigger pipeline processing"""
+    """Handle file upload and trigger pipeline processing with Celery"""
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
@@ -158,9 +280,6 @@ def upload_file():
         file = request.files['file']
         if file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
-        
-        # Clear previous logs and old output files
-        clear_pipeline_logs()
         
         # Get paths from config
         input_folder, output_folder = get_config_paths()
@@ -197,56 +316,19 @@ def upload_file():
         import time
         time.sleep(1)
         
-        # Trigger pipeline processing in background
-        try:
-            # Run the pipeline
-            result = subprocess.run(
-                ['python', 'run_pipeline.py'],
-                capture_output=True,
-                text=True,
-                timeout=300  # 5 minute timeout
-            )
-            
-            if result.returncode == 0:
-                # Extract the output filename from the logs
-                output_filename = None
-                for line in result.stdout.split('\n'):
-                    if 'Output video saved to:' in line:
-                        output_filename = Path(line.split('Output video saved to: ')[1]).name
-                        break
-                
-                if output_filename:
-                    # Redirect to result page
-                    return redirect(url_for('show_result', file=output_filename))
-                else:
-                    return jsonify({
-                        'message': 'Video processed successfully!',
-                        'output': result.stdout,
-                        'file': str(file_path)
-                    })
-            else:
-                # ✅ Add detailed error logging
-                logger.error("❌ Pipeline processing failed:")
-                logger.error(f"Return code: {result.returncode}")
-                logger.error(f"STDOUT: {result.stdout}")
-                logger.error(f"STDERR: {result.stderr}")
-                
-                return jsonify({
-                    'error': 'Pipeline processing failed',
-                    'details': result.stderr,
-                    'return_code': result.returncode,
-                    'stdout': result.stdout
-                }), 500
-                
-        except subprocess.TimeoutExpired as e:
-            logger.error(f"❌ Processing timeout: {str(e)}")
-            return jsonify({
-                'error': 'Processing timeout - video may be too large for free plan',
-                'message': 'Try with a smaller video file'
-            }), 408
+        # Start Celery task for video processing
+        task = process_video_task.delay(file.filename)
+        
+        # Return task ID for status tracking
+        return jsonify({
+            'message': 'Video upload successful! Processing started.',
+            'task_id': task.id,
+            'status': 'PROCESSING',
+            'filename': file.filename
+        })
             
     except Exception as e:
-        # ✅ Add traceback to logs for detailed error information
+        # Add traceback to logs for detailed error information
         logger.error("❌ Upload error occurred:")
         logger.error(f"Error: {str(e)}")
         logger.error("Full traceback:")
@@ -256,6 +338,93 @@ def upload_file():
             'error': 'Upload failed',
             'details': str(e)
         }), 500
+
+@app.route('/task/<task_id>')
+def get_task_status(task_id):
+    """Get the status of a Celery task"""
+    try:
+        task = process_video_task.AsyncResult(task_id)
+        
+        if task.state == 'PENDING':
+            response = {
+                'state': task.state,
+                'status': 'Task is waiting to be processed...'
+            }
+        elif task.state == 'PROGRESS':
+            response = {
+                'state': task.state,
+                'status': task.info.get('status', 'Processing...'),
+                'progress': task.info.get('progress', 0)
+            }
+        elif task.state == 'SUCCESS':
+            response = {
+                'state': task.state,
+                'status': 'Task completed successfully!',
+                'result': task.result
+            }
+        elif task.state == 'FAILURE':
+            response = {
+                'state': task.state,
+                'status': 'Task failed',
+                'error': str(task.info)
+            }
+        else:
+            response = {
+                'state': task.state,
+                'status': 'Unknown state'
+            }
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"Error getting task status: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/task/<task_id>/result')
+def get_task_result(task_id):
+    """Get the result of a completed Celery task"""
+    try:
+        task = process_video_task.AsyncResult(task_id)
+        
+        if task.state == 'SUCCESS':
+            result = task.result
+            if result.get('status') == 'SUCCESS' and result.get('output_filename'):
+                # Redirect to result page if video was processed successfully
+                return redirect(url_for('show_result', file=result['output_filename']))
+            else:
+                return jsonify(result)
+        elif task.state == 'FAILURE':
+            return jsonify({
+                'error': 'Task failed',
+                'details': str(task.info)
+            }), 500
+        else:
+            return jsonify({
+                'error': 'Task not completed yet',
+                'state': task.state
+            }), 202
+            
+    except Exception as e:
+        logger.error(f"Error getting task result: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/task/<task_id>/cleanup', methods=['POST'])
+def cleanup_task_files(task_id):
+    """Clean up files after task completion"""
+    try:
+        task = process_video_task.AsyncResult(task_id)
+        
+        if task.state == 'SUCCESS' and task.result:
+            filename = task.result.get('filename')
+            if filename:
+                cleanup_task.delay(filename)
+                return jsonify({'message': 'Cleanup task started'})
+        
+        return jsonify({'error': 'No cleanup needed or task not completed'}), 400
+        
+    except Exception as e:
+        logger.error(f"Error starting cleanup task: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/health')
 def health_check():

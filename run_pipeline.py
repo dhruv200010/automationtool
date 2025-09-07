@@ -167,21 +167,10 @@ def normalize_paths_in_config():
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
         
-        # Check if running on Railway (Railway sets PORT environment variable)
-        if os.environ.get('PORT'):
-            # Use Railway paths
-            config['input_folder'] = '/app/input'
-            config['output_folder'] = '/app/output'
-            logger.info("🚀 Running on Railway - using Railway paths in config")
-        else:
-            # For local development, normalize Windows paths
-            if 'input_folder' in config:
-                input_path = config['input_folder'].replace('\\\\', '\\')
-                config['input_folder'] = str(Path(input_path).resolve()).replace('\\', '\\\\')
-            if 'output_folder' in config:
-                output_path = config['output_folder'].replace('\\\\', '\\')
-                config['output_folder'] = str(Path(output_path).resolve()).replace('\\', '\\\\')
-            logger.info("💻 Running locally - normalized Windows paths in config")
+        # Use Hostinger KVM 2 paths
+        config['input_folder'] = '/opt/video-automation/input'
+        config['output_folder'] = '/opt/video-automation/output'
+        logger.info("🖥️ Running on Hostinger KVM 2 - using Hostinger paths in config")
         
         # Write back the normalized config
         with open(config_path, 'w', encoding='utf-8') as f:

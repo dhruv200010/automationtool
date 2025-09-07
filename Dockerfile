@@ -1,9 +1,9 @@
 # Start from a slim Python image
 FROM python:3.10-slim
 
-# Install FFmpeg and dependencies
+# Install FFmpeg and Redis dependencies
 RUN apt-get update && \
-    apt-get install -y ffmpeg && \
+    apt-get install -y ffmpeg redis-server && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -20,8 +20,20 @@ COPY . .
 # Create necessary directories
 RUN mkdir -p /app/input /app/output
 
-# Expose port 8080 (Railway expects this)
-EXPOSE 8080
+# Create startup script for multiple services
+RUN echo '#!/bin/bash\n\
+# Start Redis server in background\n\
+redis-server --daemonize yes\n\
+\n\
+# Start Celery worker in background\n\
+python start_worker.py &\n\
+\n\
+# Start Flask app\n\
+python app.py\n\
+' > /app/start.sh && chmod +x /app/start.sh
 
-# Start your app
-CMD ["python", "app.py"]
+# Expose port 8000 (Hostinger KVM 2)
+EXPOSE 8000
+
+# Start all services
+CMD ["/app/start.sh"]
