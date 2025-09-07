@@ -96,20 +96,21 @@ def process_video_task(self, filename):
         input_dir = Path(input_folder)
         input_dir.mkdir(exist_ok=True)
         
-        # Clean up old input files
-        for old_file in input_dir.glob('*'):
-            try:
-                old_file.unlink()
-                logger.info(f"🗑️ Removed old input file: {old_file.name}")
-            except Exception as e:
-                logger.warning(f"⚠️ Could not remove old file {old_file.name}: {str(e)}")
-        
-        # Check if file exists
+        # Check if file exists first
         file_path = input_dir / filename
         if not file_path.exists():
             raise FileNotFoundError(f"Input file not found: {file_path}")
         
         logger.info(f"File found: {file_path}")
+        
+        # Clean up old input files (but keep the current one)
+        for old_file in input_dir.glob('*'):
+            if old_file.name != filename:  # Don't delete the current file
+                try:
+                    old_file.unlink()
+                    logger.info(f"🗑️ Removed old input file: {old_file.name}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not remove old file {old_file.name}: {str(e)}")
         
         # Update task state
         self.update_state(state='PROGRESS', meta={'status': 'Running video pipeline...'})
@@ -129,6 +130,14 @@ def process_video_task(self, filename):
                 if 'Output video saved to:' in line:
                     output_filename = Path(line.split('Output video saved to: ')[1]).name
                     break
+            
+            # Clean up input file after successful processing
+            try:
+                if file_path.exists():
+                    file_path.unlink()
+                    logger.info(f"🗑️ Cleaned up input file after successful processing: {filename}")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not clean up input file {filename}: {str(e)}")
             
             if output_filename:
                 return {
@@ -182,7 +191,7 @@ def process_video_task(self, filename):
         }
 
 @celery_app.task(bind=True)
-def cleanup_task(self, filename):
+def cleanup_task(self, filename=None):
     """
     Celery task to clean up temporary files
     """
@@ -192,12 +201,25 @@ def cleanup_task(self, filename):
         # Get paths from config
         input_folder, output_folder = get_config_paths()
         
-        # Clean up input file
+        # Clean up specific input file if provided
+        if filename:
+            input_dir = Path(input_folder)
+            input_file = input_dir / filename
+            if input_file.exists():
+                input_file.unlink()
+                logger.info(f"🗑️ Cleaned up input file: {filename}")
+            else:
+                logger.info(f"ℹ️ Input file not found (already cleaned): {filename}")
+        
+        # Clean up any temporary files in input directory
         input_dir = Path(input_folder)
-        input_file = input_dir / filename
-        if input_file.exists():
-            input_file.unlink()
-            logger.info(f"🗑️ Cleaned up input file: {filename}")
+        for temp_file in input_dir.glob('*'):
+            if temp_file.is_file():
+                try:
+                    temp_file.unlink()
+                    logger.info(f"🗑️ Cleaned up input file: {temp_file.name}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not remove input file {temp_file.name}: {str(e)}")
         
         # Clean up any temporary files in output directory
         output_dir = Path(output_folder)
