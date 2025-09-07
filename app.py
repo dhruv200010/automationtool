@@ -424,7 +424,7 @@ def get_task_result(task_id):
         
         if task.state == 'SUCCESS':
             result = task.result
-            if result.get('status') == 'SUCCESS' and result.get('short_clips'):
+            if result.get('status') == 'SUCCESS' and result.get('short_clips') and len(result.get('short_clips', [])) > 0:
                 # Redirect to result page with short clips data
                 return redirect(url_for('show_result', 
                                       file=result['output_filename'],
