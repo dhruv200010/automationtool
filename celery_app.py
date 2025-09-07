@@ -131,6 +131,28 @@ def process_video_task(self, filename):
                     output_filename = Path(line.split('Output video saved to: ')[1]).name
                     break
             
+            # Get video base name (e.g., "test1min" from "test1min.mov")
+            video_base_name = Path(filename).stem
+            
+            # Scan for short clips that match this video's pattern
+            output_folder, _ = get_config_paths()
+            output_dir = Path(output_folder)
+            
+            # Find all short clips for this specific video
+            short_clips = []
+            pattern = f"{video_base_name}_short_*.mp4"
+            for clip_file in output_dir.glob(pattern):
+                if clip_file.is_file():
+                    short_clips.append({
+                        'filename': clip_file.name,
+                        'size': round(clip_file.stat().st_size / (1024 * 1024), 2)  # Size in MB
+                    })
+            
+            # Sort clips by name (short_1, short_2, etc.)
+            short_clips.sort(key=lambda x: x['filename'])
+            
+            logger.info(f"🎬 Found {len(short_clips)} short clips for video: {video_base_name}")
+            
             # Clean up input file after successful processing
             try:
                 if file_path.exists():
@@ -139,21 +161,25 @@ def process_video_task(self, filename):
             except Exception as e:
                 logger.warning(f"⚠️ Could not clean up input file {filename}: {str(e)}")
             
-            if output_filename:
-                return {
-                    'status': 'SUCCESS',
-                    'message': 'Video processed successfully!',
-                    'output_filename': output_filename,
-                    'stdout': result.stdout,
-                    'file': str(file_path)
-                }
-            else:
-                return {
-                    'status': 'SUCCESS',
-                    'message': 'Video processed successfully!',
-                    'output': result.stdout,
-                    'file': str(file_path)
-                }
+            # Schedule auto-cleanup after 10 minutes (600 seconds)
+            try:
+                auto_cleanup_task.apply_async(
+                    args=[video_base_name],
+                    countdown=600  # 10 minutes = 600 seconds
+                )
+                logger.info(f"⏰ Scheduled auto-cleanup for {video_base_name} in 10 minutes")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not schedule auto-cleanup: {str(e)}")
+            
+            return {
+                'status': 'SUCCESS',
+                'message': f'Video processed successfully! Generated {len(short_clips)} short clips. Auto-cleanup scheduled in 10 minutes.',
+                'output_filename': output_filename,
+                'short_clips': short_clips,
+                'video_base_name': video_base_name,
+                'stdout': result.stdout,
+                'file': str(file_path)
+            }
         else:
             # Log detailed error information
             logger.error("❌ Pipeline processing failed:")
@@ -240,6 +266,76 @@ def cleanup_task(self, filename=None):
         return {
             'status': 'FAILURE',
             'error': 'Cleanup failed',
+            'details': str(e)
+        }
+
+@celery_app.task(bind=True)
+def auto_cleanup_task(self, video_base_name):
+    """
+    Celery task to automatically clean up generated files after 10 minutes
+    """
+    try:
+        logger.info(f"🗑️ Starting auto-cleanup for video: {video_base_name}")
+        
+        # Get paths from config
+        input_folder, output_folder = get_config_paths()
+        output_dir = Path(output_folder)
+        
+        # Find all files related to this video
+        files_to_delete = []
+        
+        # Main processed video
+        main_video_pattern = f"{video_base_name}_with_subs.mp4"
+        for file in output_dir.glob(main_video_pattern):
+            if file.is_file():
+                files_to_delete.append(file)
+        
+        # Short clips
+        short_clips_pattern = f"{video_base_name}_short_*.mp4"
+        for file in output_dir.glob(short_clips_pattern):
+            if file.is_file():
+                files_to_delete.append(file)
+        
+        # Trimmed video
+        trimmed_pattern = f"{video_base_name}_with_subs_trimmed.mp4"
+        trimmed_dir = output_dir / "processed"
+        if trimmed_dir.exists():
+            for file in trimmed_dir.glob(trimmed_pattern):
+                if file.is_file():
+                    files_to_delete.append(file)
+        
+        # Subtitle files
+        subtitle_dir = output_dir / "subtitles"
+        if subtitle_dir.exists():
+            subtitle_pattern = f"{video_base_name}.srt"
+            for file in subtitle_dir.glob(subtitle_pattern):
+                if file.is_file():
+                    files_to_delete.append(file)
+        
+        # Delete all found files
+        deleted_count = 0
+        for file_path in files_to_delete:
+            try:
+                file_path.unlink()
+                deleted_count += 1
+                logger.info(f"🗑️ Deleted: {file_path.name}")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not delete {file_path.name}: {str(e)}")
+        
+        logger.info(f"✅ Auto-cleanup completed for {video_base_name}: {deleted_count} files deleted")
+        
+        return {
+            'status': 'SUCCESS',
+            'message': f'Auto-cleanup completed: {deleted_count} files deleted',
+            'deleted_files': deleted_count,
+            'video_base_name': video_base_name
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Auto-cleanup error for {video_base_name}: {str(e)}")
+        return {
+            'status': 'FAILURE',
+            'error': 'Auto-cleanup failed',
             'details': str(e)
         }
 

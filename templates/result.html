@@ -102,23 +102,57 @@
         <div class="status-badge">✅ Successfully Processed</div>
         
         <div style="text-align: center; margin: 20px 0; color: #666;">
-            <strong>Processed Video:</strong> {{ filename }}<br>
-            <strong>File Size:</strong> {{ file_size }}<br>
+            {% if short_clips %}
+                <strong>Generated Short Clips:</strong> {{ short_clips|length }} clips<br>
+                {% if main_video %}
+                    <strong>Main Video:</strong> {{ main_video.filename }} ({{ main_video.size }})<br>
+                {% endif %}
+            {% elif main_video %}
+                <strong>Processed Video:</strong> {{ main_video.filename }}<br>
+                <strong>File Size:</strong> {{ main_video.size }}<br>
+            {% endif %}
             <small>Completed at: {{ timestamp }}</small>
         </div>
         
-        <div class="video-container">
-            <video width="600" controls>
-                <source src="{{ video_url }}" type="video/mp4">
-                Your browser does not support the video tag.
-            </video>
-        </div>
+        {% if short_clips %}
+            <div style="margin: 30px 0;">
+                <h3 style="text-align: center; color: #333; margin-bottom: 20px;">🎬 Short Clips Generated</h3>
+                
+                {% for clip in short_clips %}
+                <div style="border: 1px solid #ddd; border-radius: 8px; margin: 20px 0; padding: 20px; background: #fafafa;">
+                    <div style="text-align: center; margin-bottom: 15px;">
+                        <strong>{{ clip.filename }}</strong> ({{ clip.size }})
+                    </div>
+                    
+                    <div class="video-container">
+                        <video width="500" controls>
+                            <source src="{{ clip.url }}" type="video/mp4">
+                            Your browser does not support the video tag.
+                        </video>
+                    </div>
+                    
+                    <div style="text-align: center; margin-top: 15px;">
+                        <a href="{{ clip.url }}" download class="download-btn" style="padding: 10px 20px; font-size: 14px;">
+                            📥 Download {{ clip.filename }}
+                        </a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% elif main_video %}
+            <div class="video-container">
+                <video width="600" controls>
+                    <source src="{{ main_video.url }}" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+            </div>
 
-        <div class="download-section">
-            <a href="{{ video_url }}" download class="download-btn">
-                📥 Download Processed Video
-            </a>
-        </div>
+            <div class="download-section">
+                <a href="{{ main_video.url }}" download class="download-btn">
+                    📥 Download Processed Video
+                </a>
+            </div>
+        {% endif %}
 
         <div class="logs-section">
             <h3 class="logs-header">🪵 Processing Logs:</h3>

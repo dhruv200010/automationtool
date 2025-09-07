@@ -6,7 +6,7 @@ import traceback
 from pathlib import Path
 from flask import Flask, request, jsonify, render_template_string, render_template, send_from_directory, redirect, url_for
 import logging
-from celery_app import celery_app, process_video_task, cleanup_task
+from celery_app import celery_app, process_video_task, cleanup_task, auto_cleanup_task
 
 # Add the project root to Python path
 project_root = Path(__file__).parent.absolute()
@@ -222,11 +222,23 @@ UPLOAD_TEMPLATE = """
             
             statusSpan.textContent = result.state;
             
+            // Format ETA display
+            let etaDisplay = '';
+            if (result.eta_minutes !== null && result.eta_minutes !== undefined) {
+                if (result.eta_minutes === 0) {
+                    etaDisplay = ' - Completed!';
+                } else if (result.eta_minutes === 1) {
+                    etaDisplay = ' - ETA: ~1 minute';
+                } else {
+                    etaDisplay = ` - ETA: ~${Math.round(result.eta_minutes)} minutes`;
+                }
+            }
+            
             if (result.state === 'PENDING') {
-                progressText.innerHTML = '<span class="spinner"></span>Task is waiting to be processed...';
+                progressText.innerHTML = `<span class="spinner"></span>Task is waiting to be processed...${etaDisplay}`;
                 progressFill.style.width = '10%';
             } else if (result.state === 'PROGRESS') {
-                progressText.innerHTML = `<span class="spinner"></span>${result.status || 'Processing...'}`;
+                progressText.innerHTML = `<span class="spinner"></span>${result.status || 'Processing...'}${etaDisplay}`;
                 progressFill.style.width = '50%';
             } else if (result.state === 'SUCCESS') {
                 progressText.textContent = '✅ Task completed successfully!';
@@ -345,33 +357,57 @@ def get_task_status(task_id):
     try:
         task = process_video_task.AsyncResult(task_id)
         
+        # Calculate ETA for processing tasks
+        eta_minutes = None
+        if task.state in ['PENDING', 'PROGRESS']:
+            # Estimate processing time based on typical video processing
+            # Average processing time: 2-4 minutes for 1-minute videos
+            estimated_processing_time = 3  # minutes
+            
+            if task.state == 'PENDING':
+                eta_minutes = estimated_processing_time
+            elif task.state == 'PROGRESS':
+                # Calculate remaining time based on progress
+                progress = task.info.get('progress', 0) if task.info else 0
+                if progress > 0:
+                    # Estimate remaining time based on progress percentage
+                    remaining_progress = 100 - progress
+                    eta_minutes = max(1, (remaining_progress / progress) * estimated_processing_time)
+                else:
+                    eta_minutes = estimated_processing_time
+        
         if task.state == 'PENDING':
             response = {
                 'state': task.state,
-                'status': 'Task is waiting to be processed...'
+                'status': 'Task is waiting to be processed...',
+                'eta_minutes': eta_minutes
             }
         elif task.state == 'PROGRESS':
             response = {
                 'state': task.state,
                 'status': task.info.get('status', 'Processing...'),
-                'progress': task.info.get('progress', 0)
+                'progress': task.info.get('progress', 0),
+                'eta_minutes': eta_minutes
             }
         elif task.state == 'SUCCESS':
             response = {
                 'state': task.state,
                 'status': 'Task completed successfully!',
-                'result': task.result
+                'result': task.result,
+                'eta_minutes': 0
             }
         elif task.state == 'FAILURE':
             response = {
                 'state': task.state,
                 'status': 'Task failed',
-                'error': str(task.info)
+                'error': str(task.info),
+                'eta_minutes': None
             }
         else:
             response = {
                 'state': task.state,
-                'status': 'Unknown state'
+                'status': 'Unknown state',
+                'eta_minutes': None
             }
         
         return jsonify(response)
@@ -388,8 +424,14 @@ def get_task_result(task_id):
         
         if task.state == 'SUCCESS':
             result = task.result
-            if result.get('status') == 'SUCCESS' and result.get('output_filename'):
-                # Redirect to result page if video was processed successfully
+            if result.get('status') == 'SUCCESS' and result.get('short_clips'):
+                # Redirect to result page with short clips data
+                return redirect(url_for('show_result', 
+                                      file=result['output_filename'],
+                                      video_base_name=result.get('video_base_name'),
+                                      short_clips=len(result.get('short_clips', []))))
+            elif result.get('status') == 'SUCCESS' and result.get('output_filename'):
+                # Fallback for videos without short clips
                 return redirect(url_for('show_result', file=result['output_filename']))
             else:
                 return jsonify(result)
@@ -424,6 +466,22 @@ def cleanup_task_files(task_id):
         
     except Exception as e:
         logger.error(f"Error starting cleanup task: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/cleanup/<video_base_name>', methods=['POST'])
+def manual_cleanup(video_base_name):
+    """Manually trigger cleanup for a specific video"""
+    try:
+        # Start the auto-cleanup task immediately
+        task = auto_cleanup_task.delay(video_base_name)
+        
+        return jsonify({
+            'message': f'Manual cleanup started for {video_base_name}',
+            'task_id': task.id
+        })
+        
+    except Exception as e:
+        logger.error(f"Error starting manual cleanup: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/health')
@@ -483,13 +541,40 @@ def show_result():
     """Display processed video with download and logs"""
     try:
         filename = request.args.get('file')
+        video_base_name = request.args.get('video_base_name')
+        
         if not filename:
             return jsonify({'error': 'No file specified'}), 400
         
         _, output_folder = get_config_paths()
+        
+        # If we have video_base_name, look for short clips
+        short_clips = []
+        if video_base_name:
+            output_dir = Path(output_folder)
+            pattern = f"{video_base_name}_short_*.mp4"
+            for clip_file in output_dir.glob(pattern):
+                if clip_file.is_file():
+                    clip_size = round(clip_file.stat().st_size / (1024 * 1024), 2)
+                    short_clips.append({
+                        'filename': clip_file.name,
+                        'url': f'/output/{clip_file.name}',
+                        'size': f"{clip_size} MB"
+                    })
+            # Sort clips by name (short_1, short_2, etc.)
+            short_clips.sort(key=lambda x: x['filename'])
+        
+        # Main video info
         video_path = Path(output_folder) / filename
-        if not video_path.exists():
-            return jsonify({'error': f'Video file not found: {filename}'}), 404
+        main_video = None
+        if video_path.exists():
+            file_size = video_path.stat().st_size
+            file_size_mb = round(file_size / (1024 * 1024), 2)
+            main_video = {
+                'filename': filename,
+                'url': f'/output/{filename}',
+                'size': f"{file_size_mb} MB"
+            }
         
         # Read logs from pipeline.log
         log_file = Path('pipeline.log')
@@ -501,18 +586,14 @@ def show_result():
             except Exception as e:
                 logs = f"Error reading logs: {str(e)}"
         
-        # Get file info
-        file_size = video_path.stat().st_size if video_path.exists() else 0
-        file_size_mb = round(file_size / (1024 * 1024), 2)
-        
         # Get current timestamp
         from datetime import datetime
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         return render_template('result.html', 
-                             video_url=f'/output/{filename}',
-                             filename=filename,
-                             file_size=f"{file_size_mb} MB",
+                             main_video=main_video,
+                             short_clips=short_clips,
+                             video_base_name=video_base_name,
                              timestamp=timestamp,
                              logs=logs)
     except Exception as e:
