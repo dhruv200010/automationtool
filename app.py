@@ -255,15 +255,15 @@ UPLOAD_TEMPLATE = """
             const statusDiv = document.getElementById('status');
             const submitBtn = document.getElementById('submitBtn');
             
+            console.log('🔍 Task completion result:', result);
+            console.log('🔍 Current task ID:', currentTaskId);
+            
             if (result.state === 'SUCCESS') {
-                if (result.result && result.result.output_filename) {
-                    statusDiv.innerHTML = '<div class="success">✅ Video processed successfully! Redirecting to result page...</div>';
-                    setTimeout(() => {
-                        window.location.href = `/result?file=${result.result.output_filename}`;
-                    }, 2000);
-                } else {
-                    statusDiv.innerHTML = '<div class="success">✅ Video processed successfully!</div>';
-                }
+                statusDiv.innerHTML = '<div class="success">✅ Video processed successfully! Redirecting to result page...</div>';
+                console.log('🔍 Redirecting to:', `/task/${currentTaskId}/result`);
+                setTimeout(() => {
+                    window.location.href = `/task/${currentTaskId}/result`;
+                }, 2000);
             } else {
                 statusDiv.innerHTML = `<div class="error">❌ Processing failed: ${result.error || 'Unknown error'}</div>`;
             }
@@ -422,32 +422,43 @@ def get_task_result(task_id):
     try:
         task = process_video_task.AsyncResult(task_id)
         
+        logger.info(f"🔍 Task {task_id} state: {task.state}")
+        
         if task.state == 'SUCCESS':
             result = task.result
+            logger.info(f"🔍 Task result: {result}")
+            
             if result.get('status') == 'SUCCESS':
                 # Always redirect to result page - it will handle short clips display
                 video_base_name = result.get('video_base_name')
+                logger.info(f"🔍 Video base name: {video_base_name}")
+                
                 if not video_base_name:
+                    logger.error(f"❌ No video base name in result: {result}")
                     return jsonify({'error': 'No video base name in result'}), 500
                 
                 result_url = url_for('show_result', video_base_name=video_base_name)
-                print(f"DEBUG: Redirecting to: {result_url}")
+                logger.info(f"🔍 Redirecting to: {result_url}")
                 return redirect(result_url)
             else:
+                logger.warning(f"⚠️ Task result status is not SUCCESS: {result.get('status')}")
                 return jsonify(result)
         elif task.state == 'FAILURE':
+            logger.error(f"❌ Task {task_id} failed: {task.info}")
             return jsonify({
                 'error': 'Task failed',
                 'details': str(task.info)
             }), 500
         else:
+            logger.info(f"⏳ Task {task_id} not completed yet, state: {task.state}")
             return jsonify({
                 'error': 'Task not completed yet',
                 'state': task.state
             }), 202
             
     except Exception as e:
-        logger.error(f"Error getting task result: {str(e)}")
+        logger.error(f"❌ Error getting task result: {str(e)}")
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 @app.route('/task/<task_id>/cleanup', methods=['POST'])
@@ -545,7 +556,6 @@ def show_result():
         if not video_base_name:
             return jsonify({'error': 'No video base name specified'}), 400
         
-        print(f"DEBUG: show_result called with video_base_name: {video_base_name}")
         
         _, output_folder = get_config_paths()
         output_dir = Path(output_folder)
